@@ -1,0 +1,75 @@
+/* css/admin.css */
+:root {
+    --side-bg: #0f172a;
+    --accent: #6366f1;
+    --accent-hover: #4f46e5;
+    --bg-main: #f1f5f9;
+    --white: #ffffff;
+    --text-main: #1e293b;
+    --text-muted: #64748b;
+    --radius-md: 10px;
+    --radius-lg: 16px;
+    --shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+}
+
+body { background: var(--bg-main); margin: 0; font-family: 'Inter', sans-serif; color: var(--text-main); }
+.admin-layout { display: flex; height: 100vh; width: 100vw; overflow: hidden; }
+
+.sidebar { width: 280px; background: var(--side-bg); color: #fff; display: flex; flex-direction: column; padding: 24px; justify-content: space-between; }
+.sidebar-logo { font-size: 1.5rem; font-weight: 800; color: var(--accent); margin-bottom: 40px; display: flex; align-items: center; gap: 12px; }
+.nav-item { list-style: none; padding: 14px 18px; border-radius: 12px; margin-bottom: 8px; cursor: pointer; display: flex; align-items: center; gap: 12px; color: #94a3b8; font-weight: 500; transition: 0.2s ease; }
+.nav-item:hover { background: #1e293b; color: #fff; }
+.nav-item.active { background: var(--accent); color: #fff; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4); }
+
+.support-card { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; padding: 15px; display: flex; align-items: center; gap: 12px; text-decoration: none; margin-bottom: 20px; transition: 0.3s; }
+.support-card:hover { background: rgba(255, 255, 255, 0.1); border-color: #25d366; }
+.support-icon { width: 40px; height: 40px; background: #25d366; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: white; font-size: 1.2rem; }
+.support-info { display: flex; flex-direction: column; }
+.support-title { color: white; font-size: 0.85rem; font-weight: 600; }
+.support-subtitle { color: #94a3b8; font-size: 0.7rem; }
+
+.btn-logout { width: 100%; background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); padding: 12px; border-radius: 12px; cursor: pointer; font-weight: 600; }
+.btn-logout:hover { background: #ef4444; color: white; }
+
+.main-content { flex: 1; padding: 40px; overflow-y: auto; background: var(--bg-main); }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-bottom: 20px; }
+.stat-card { background: #fff; padding: 25px; border-radius: 16px; text-align: center; box-shadow: var(--shadow); border: 1px solid #e2e8f0; position: relative; }
+.stat-card h3 { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px; text-transform: uppercase; }
+.stat-card p { font-size: 2.2rem; font-weight: 800; color: var(--accent); margin: 0; }
+
+/* ALERTAS SUTIS */
+.stat-alert-pill { font-size: 0.65rem; color: #ef4444; font-weight: 700; margin-top: 5px; min-height: 15px; }
+
+/* MONITOR & SWITCH */
+.monitor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+.monitor-card { background: #fff; padding: 12px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); display: flex; flex-direction: column; transition: 0.3s; border: 1px solid #e2e8f0; }
+.m-grade { font-size: 0.65rem; text-transform: uppercase; font-weight: 700; color: #94a3b8; }
+.m-sub { font-size: 0.95rem; font-weight: 800; color: #1e293b; margin: 2px 0; }
+.m-prof { font-size: 0.75rem; color: #64748b; }
+
+.monitor-toggle { display: flex; align-items: center; gap: 10px; font-size: 0.75rem; font-weight: 600; color: var(--text-muted); }
+.switch { position: relative; display: inline-block; width: 36px; height: 20px; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #cbd5e1; transition: .4s; border-radius: 34px; }
+.slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+input:checked + .slider { background-color: var(--accent); }
+input:checked + .slider:before { transform: translateX(16px); }
+
+/* GRÁFICO CARGA HORÁRIA */
+.chart-container { display: flex; align-items: flex-end; gap: 12px; height: 160px; padding: 25px 10px 0; border-bottom: 1px solid #f1f5f9; overflow-x: auto; }
+.chart-bar-col { display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 55px; }
+.chart-bar-fill { width: 22px; background: var(--accent); border-radius: 4px 4px 0 0; transition: height 0.6s ease; position: relative; }
+.chart-bar-fill::after { content: attr(data-val); position: absolute; top: -18px; font-size: 0.65rem; font-weight: 800; width: 100%; text-align: center; }
+.chart-label { font-size: 0.6rem; color: var(--text-muted); margin-top: 8px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; }
+
+.card { background: #fff; border-radius: 16px; padding: 24px; border: 1px solid #e2e8f0; margin-bottom: 24px; box-shadow: var(--shadow); }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 24px; }
+.input-group { margin-bottom: 20px; }
+.input-group label { display: block; font-size: 0.85rem; font-weight: 700; color: var(--text-muted); margin-bottom: 8px; }
+input, select { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #e2e8f0; background: #f8fafc; font-family: inherit; }
+.data-list { list-style: none; padding: 0; }
+.data-list li { background: #f8fafc; padding: 14px 18px; border-radius: 12px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #f1f5f9; }
+.subject-color-tag { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 10px; }
+.btn-edit { background: #fef9c3; color: #a16207; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 0.75rem; font-weight: 700; margin-right: 5px; }
+.btn-delete { background: #fee2e2; color: #b91c1c; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 0.75rem; font-weight: 700; }
+.hidden { display: none !important; }
