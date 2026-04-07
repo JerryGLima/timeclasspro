@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meus Horários - TimeClass Pro</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/horario-prof.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        .agenda-scroll { display: flex; gap: 12px; overflow-x: auto; padding: 5px 2px 15px; scrollbar-width: none; }
+        .agenda-scroll::-webkit-scrollbar { display: none; }
+        .timetable-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 18px; background: white; border: 1px solid #e2e8f0; }
+        @media (max-width: 768px) {
+            #headerProf { grid-template-columns: 1fr; gap: 15px; text-align: center !important; }
+            #headerProf div { text-align: center !important; }
+            .btn-group-mobile { flex-direction: column; width: 100%; }
+        }
+        .agenda-card { min-width: 160px; padding: 15px; border-radius: 18px; box-shadow: 0 4px 10px rgba(0,0,0,0.03); border: 1px solid #f1f5f9; display: flex; flex-direction: column; gap: 4px; transition: transform 0.2s; }
+        .agenda-card.active { transform: scale(1.05); border: 2px solid #6366f1; }
+        
+        /* Força fundo branco e evita distorção na logo da escola */
+        #schoolLogoDisplay { 
+            max-height: 55px; 
+            max-width: 140px; 
+            border-radius: 8px; 
+            background-color: #ffffff !important; 
+            object-fit: contain;
+            padding: 4px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+    </style>
+</head>
+<body style="background:#f1f5f9; color: #1e293b; font-family: 'Inter', sans-serif;">
+    <div class="prof-container" style="max-width: 1000px; margin: 0 auto; padding: 15px;">
+        
+        <div id="printArea" style="background: white; padding: 20px; border-radius: 24px; box-shadow: 0 15px 35px rgba(0,0,0,0.05); border: 1px solid rgba(255,255,255,0.7);">
+            
+            <header id="headerProf" style="display: grid; grid-template-columns: 1fr 1.5fr 1.2fr; align-items: center; border-bottom: 2px solid #f8fafc; padding-bottom: 20px; margin-bottom: 20px;">
+                <div style="text-align: left;">
+                    <img id="schoolLogoDisplay" src="imagem/ICONE.png" alt="Logo Escola">
+                </div>
+                <div style="text-align: center;">
+                    <h2 id="viewSchoolNameProf" style="margin:0; font-size: 1.1rem; font-weight: 800; text-transform: uppercase; color: #0f172a;">ESCOLA</h2>
+                    <p style="margin: 4px 0 0; font-size: 0.95rem; font-weight: 700; color: #6366f1;">Prof(a): <span id="viewProfNameProf">...</span></p>
+                </div>
+                <div style="text-align: right;">
+                    <h1 class="modern-title" style="font-size: 0.85rem; color: #ffffff; font-weight: 800;">HORARIO ESCOLAR <span class="currentYear"></span></h1>
+                </div>
+            </header>
+
+            <section id="dailyAgendaContainer" class="no-print" style="margin-bottom: 30px;">
+                <h3 style="font-size: 0.8rem; color: #6366f1; font-weight: 800; text-transform: uppercase; margin-bottom: 15px;">
+                    <span style="background: #eef2ff; padding: 6px 16px; border-radius: 20px; border: 1px solid #e0e7ff;">📅 Agenda de Hoje: <span id="todayLabel">...</span></span>
+                </h3>
+                <div id="dailyAgendaScroll" class="agenda-scroll"></div>
+            </section>
+
+            <div class="timetable-wrapper">
+                <main id="timetableContent"></main>
+            </div>
+
+            <div id="pdfFooterProf" style="display:none; text-align:center; font-size:0.6rem; color:#94a3b8; margin-top:20px; border-top:1px solid #f1f5f9; padding-top:10px">
+                Direitos reservados a Jerry Gleydison &copy; <span class="currentYear"></span> - TimeClass Pro
+            </div>
+        </div>
+
+        <div style="display: flex; justify-content: center; gap: 12px; margin-top: 30px; margin-bottom: 50px;" class="no-print btn-group-mobile">
+            <button id="btnDownloadPdf" class="btn-primary" style="background: #0f172a; padding: 14px 28px; border-radius: 14px; font-weight: 700; border:none; color:white; cursor:pointer;">📄 Baixar PDF</button>
+            <button id="btnLogoutProf" style="background: white; color: #ef4444; border: 2px solid #fee2e2; padding: 14px 28px; border-radius: 14px; font-weight: 700;">Sair</button>
+            <a href="https://wa.me/99981453613" target="_blank" style="background: #25d366; color: white; text-decoration: none; padding: 14px 28px; border-radius: 14px; font-weight: 700; display: flex; align-items: center;">Ajuda?</a>
+        </div>
+
+        <footer class="no-print" style="text-align: center; font-size: 0.7rem; color: #94a3b8; margin-top: -20px; padding-bottom: 30px;">
+            &copy; Direitos reservados a Jerry Gleydison - Março 2026
+        </footer>
+    </div>
+    <script type="module" src="js/professor.js"></script>
+</body>
+</html>
