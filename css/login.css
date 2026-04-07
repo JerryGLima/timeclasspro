@@ -1,0 +1,170 @@
+/* --- LOGIN CONTAINER --- */
+.login-container {
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%); /* Gradiente suave ao invés de cor sólida */
+    padding: 20px; /* Garante que o card não encoste nas bordas do celular */
+}
+
+/* --- LOGIN CARD --- */
+.login-card {
+    width: 100%;
+    max-width: 420px; /* Um pouco mais de espaço para respirar */
+    background: #ffffff;
+    padding: 40px;
+    border-radius: 24px; /* Bordas um pouco mais arredondadas (estilo moderno) */
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.05); /* Sombra em camadas para profundidade real */
+    border: 1px solid rgba(255, 255, 255, 0.6); /* Efeito sutil de reflexo nas bordas */
+}
+
+/* --- HEADER --- */
+.login-header { 
+    text-align: center; 
+    margin-bottom: 35px; 
+}
+
+.login-header h2 {
+    color: #1e293b;
+    font-weight: 800;
+    margin-bottom: 8px;
+    font-size: 1.5rem;
+}
+
+.login-header p {
+    color: #64748b;
+    font-size: 0.95rem;
+}
+
+/* --- TABS --- */
+.tabs {
+    display: flex;
+    background: #f8fafc; /* Fundo do container da tab bem claro */
+    padding: 6px;
+    border-radius: 14px;
+    margin-bottom: 30px;
+    border: 1px solid #e2e8f0; /* Borda limitadora sutil */
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 12px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.9rem;
+    border-radius: 10px;
+    color: #64748b;
+    transition: all 0.3s ease; /* Transição fluida */
+}
+
+.tab-btn:hover {
+    color: #334155;
+}
+
+.tab-btn.active { 
+    background: #ffffff; 
+    color: var(--primary, #6366f1); /* Cor de destaque com fallback */
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); 
+}
+
+/* --- INPUTS --- */
+.input-group { 
+    margin-bottom: 20px; 
+}
+
+.input-group label { 
+    display: block; 
+    font-size: 0.85rem; 
+    font-weight: 600;
+    margin-bottom: 8px; 
+    color: #475569; 
+}
+
+.input-group input {
+    width: 100%;
+    padding: 14px 16px;
+    border: 1px solid #cbd5e1;
+    border-radius: 12px;
+    outline: none;
+    background: #f8fafc;
+    color: #1e293b;
+    font-size: 0.95rem;
+    transition: all 0.3s ease;
+}
+
+.input-group input:hover {
+    border-color: #94a3b8;
+}
+
+/* Efeito de anel de foco super moderno */
+.input-group input:focus {
+    background: #ffffff;
+    border-color: var(--primary, #6366f1); 
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15); 
+}
+
+.input-group input::placeholder {
+    color: #94a3b8;
+}
+
+/* --- BUTTONS --- */
+.full-width { 
+    width: 100%; 
+    margin-top: 10px; 
+}
+
+.btn-google {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 12px;
+    font-weight: 600;
+    color: #334155;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.btn-google:hover {
+    background: #f8fafc;
+    border-color: #94a3b8;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    transform: translateY(-1px); /* Botão levanta levemente no hover */
+}
+
+.btn-google:active {
+    transform: translateY(0); /* Botão afunda no clique */
+}
+
+/* --- TEXTOS E LINKS --- */
+.error-text { 
+    color: var(--danger, #ef4444); 
+    font-size: 0.85rem; 
+    text-align: center; 
+    margin-top: 12px; 
+    font-weight: 500;
+}
+
+.back-link { 
+    text-align: center; 
+    margin-top: 25px; 
+}
+
+.back-link a { 
+    text-decoration: none; 
+    color: #64748b; 
+    font-size: 0.9rem; 
+    font-weight: 500;
+    transition: color 0.2s ease;
+}
+
+.back-link a:hover {
+    color: var(--primary, #6366f1);
+}
