@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TimeClass Pro - Horário da Turma</title>
+    <link rel="stylesheet" href="css/style.css">
+    <!-- Link para o novo CSS exclusivo da turma -->
+    <link rel="stylesheet" href="css/horario-turma.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+</head>
+<body style="background:#f1f5f9; padding: 20px;">
+    <div style="max-width:1100px; margin:0 auto;">
+        
+        <!-- Cabeçalho Público -->
+        <header style="background:white; padding:30px; border-radius:24px; box-shadow:0 4px 20px rgba(0,0,0,0.03); margin-bottom:20px; text-align:center; position: relative; border-bottom: 3px solid #6366f1;">
+            <img id="logoPublic" src="" style="max-height:60px; margin-bottom:15px; display:none; margin-left: auto; margin-right: auto; border-radius: 8px;">
+            <h1 class="modern-title">HORÁRIO ESCOLAR <span id="currentYearDisplay"></span></h1>
+            <p id="gradeNamePublic" style="margin-top:15px; font-size: 1.2rem; font-weight:800; color:#1e293b">Carregando...</p>
+            <p id="courseNamePublic" style="color:#64748b; font-size:0.9rem; font-weight: 500;"></p>
+        </header>
+
+        <!-- Área da Grade -->
+        <div id="printArea" class="card">
+            <p style="text-align:center; padding:50px; color:#6366f1; font-weight: 600;">⌛ Sincronizando horários da turma...</p>
+        </div>
+
+        <!-- Rodapé Público -->
+        <footer style="text-align: center; margin-top: 30px; padding: 20px; color: #94a3b8; font-size: 0.8rem; border-top: 1px solid #e2e8f0;">
+            <p>© <span id="yearCopy"></span> TimeClass Pro - Gestão Escolar Inteligente</p>
+            <p style="margin-top: 5px;">Desenvolvido por Jerry Gleydison | <a href="https://wa.me/99981453613" target="_blank" style="color:#25d366; text-decoration:none; font-weight:600;">Suporte Técnico</a></p>
+        </footer>
+    </div>
+
+    <script type="module">
+        import { db } from './js/firebase-config.js';
+        import { doc, getDoc, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { calculateTimeSlots } from './js/utils.js';
+
+        async function loadPublicTimetable() {
+            const params = new URLSearchParams(window.location.search);
+            const sId = params.get('s'); // School ID
+            const gId = params.get('g'); // Grade ID
+            
+            if(!sId || !gId) {
+                document.getElementById('printArea').innerHTML = "<div style='text-align:center; padding:50px;'><h3>⚠️ Erro: Link de acesso inválido ou expirado.</h3></div>";
+                return;
+            }
+
+            const year = new Date().getFullYear();
+            document.getElementById('currentYearDisplay').textContent = year;
+            document.getElementById('yearCopy').textContent = year;
+
+            try {
+                // 1. Carrega dados da Turma e Configurações
+                const gSnap = await getDoc(doc(db, "grades", gId));
+                if (!gSnap.exists()) throw new Error("Turma não encontrada");
+                const gData = gSnap.data();
+
+                document.getElementById('gradeNamePublic').textContent = gData.name;
+                document.getElementById('courseNamePublic').textContent = gData.courseName;
+                
+                if(gData.logoUrl) { 
+                    const logoImg = document.getElementById('logoPublic');
+                    logoImg.src = gData.logoUrl; 
+                    logoImg.style.display = "block"; 
+                }
+
+                // 2. Carrega todas as matérias para o mapa de cores
+                const subSnap = await getDocs(query(collection(db, "subjects"), where("schoolId", "==", sId)));
+                const subMap = {}; 
+                subSnap.forEach(d => subMap[d.id] = d.data());
+
+                // 3. Carrega os horários da turma
+                const qS = await getDocs(query(collection(db, "schedules"), where("gradeId", "==", gId)));
+                const lessons = qS.docs.map(d => d.data());
+
+                // 4. Calcula os horários baseados na config da turma
+                const times = calculateTimeSlots(
+                    gData.startTime || "07:15", 
+                    gData.lessonDuration || 50, 
+                    7, 
+                    gData.intervalAfter || 3, 
+                    gData.intervalDuration || 15
+                );
+
+                const days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'];
+
+                // 5. Monta a Tabela
+                let html = `<table><thead><tr><th>Horário</th>`;
+                days.forEach(d => html += `<th>${d.toUpperCase()}</th>`);
+                html += `</tr></thead><tbody>`;
+
+                for (let i = 1; i <= 7; i++) {
+                    html += `<tr><td class="time-column">${times[i-1] || '--:--'}</td>`;
+                    
+                    days.forEach(d => {
+                        const aula = lessons.find(l => l.day === d && l.period == i);
+                        if(aula) { 
+                            // Busca a disciplina exata pelo ID salvo no horário
+                            const sub = subMap[aula.subjectId] || {color:'#6366f1', name:'Disciplina'}; 
+                            html += `<td><div class="subject-card-public" style="background:${sub.color};">
+                                        ${sub.name}
+                                     </div></td>`; 
+                        } else { 
+                            html += `<td><div class="empty-cell"></div></td>`; 
+                        }
+                    });
+                    html += `</tr>`;
+                    
+                    // Insere linha de intervalo
+                    if(i == gData.intervalAfter) {
+                        html += `<tr class="intervalo-row"><td colspan="6">I N T E R V A L O</td></tr>`;
+                    }
+                }
+                html += `</tbody></table>`;
+                document.getElementById('printArea').innerHTML = html;
+
+            } catch (err) {
+                console.error(err);
+                document.getElementById('printArea').innerHTML = "<div style='text-align:center; padding:50px;'><h3>❌ Erro ao carregar informações do servidor.</h3></div>";
+            }
+        }
+        
+        loadPublicTimetable();
+    </script>
+</body>
+</html>
