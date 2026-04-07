@@ -1,0 +1,214 @@
+/* css/index.css */
+:root {
+    --primary: #6366f1;
+    --accent: #a855f7;
+    --text-dark: #1e293b;
+    --text-light: #64748b;
+    --glass: rgba(255, 255, 255, 0.75);
+}
+
+body {
+    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+}
+
+.main-wrapper {
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 1;
+}
+
+/* Animações Flutuantes para o Fundo */
+@keyframes float1 {
+    0% { transform: translate(0, 0) scale(1); }
+    50% { transform: translate(30px, -30px) scale(1.05); }
+    100% { transform: translate(0, 0) scale(1); }
+}
+
+@keyframes float2 {
+    0% { transform: translate(0, 0) scale(1); }
+    50% { transform: translate(-30px, 30px) scale(0.95); }
+    100% { transform: translate(0, 0) scale(1); }
+}
+
+.blob {
+    position: absolute;
+    width: 500px;
+    height: 500px;
+    background: var(--primary);
+    filter: blur(120px);
+    border-radius: 50%;
+    z-index: -1;
+    top: -100px;
+    right: -100px;
+    opacity: 0.15;
+    animation: float1 15s ease-in-out infinite;
+}
+
+.blob2 {
+    position: absolute;
+    width: 400px;
+    height: 400px;
+    background: var(--accent);
+    filter: blur(100px);
+    border-radius: 50%;
+    z-index: -1;
+    bottom: -50px;
+    left: -100px;
+    opacity: 0.15;
+    animation: float2 18s ease-in-out infinite;
+}
+
+/* Animação de Entrada do Cartão */
+@keyframes slideUpFade {
+    from { 
+        opacity: 0; 
+        transform: translateY(40px); 
+    }
+    to { 
+        opacity: 1; 
+        transform: translateY(0); 
+    }
+}
+
+.glass-card {
+    background: var(--glass);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    /* Reflexo interno no topo para maior realismo de vidro */
+    box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.1), inset 0 2px 0 rgba(255, 255, 255, 0.7);
+    border-radius: 32px;
+    padding: 60px 50px;
+    width: 100%;
+    max-width: 650px;
+    text-align: center;
+    animation: slideUpFade 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.brand-logo {
+    width: 88px;
+    height: 88px;
+    background: #ffffff;
+    border-radius: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 35px;
+    box-shadow: 0 15px 30px rgba(99, 102, 241, 0.15);
+    font-weight: 800;
+    color: var(--primary);
+    font-size: 1.75rem;
+    transition: transform 0.3s ease;
+}
+
+.brand-logo:hover {
+    transform: scale(1.05) rotate(-5deg);
+}
+
+.main-title {
+    font-size: 2.8rem;
+    font-weight: 800;
+    margin-bottom: 20px;
+    color: var(--text-dark);
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+}
+
+.main-title span {
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.subtitle {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-dark);
+    margin-bottom: 16px;
+}
+
+.description {
+    color: var(--text-light);
+    font-size: 1.05rem;
+    margin-bottom: 45px;
+    line-height: 1.7;
+    max-width: 90%;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.btn-main {
+    background: var(--text-dark);
+    color: #ffffff;
+    padding: 18px 42px;
+    border-radius: 20px;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 1.05rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: inline-block;
+    box-shadow: 0 10px 20px -10px rgba(30, 41, 59, 0.5);
+}
+
+.btn-main:hover {
+    background: var(--primary);
+    transform: translateY(-4px);
+    box-shadow: 0 20px 25px -10px rgba(99, 102, 241, 0.4);
+}
+
+footer {
+    margin-top: 50px;
+    color: var(--text-light);
+    font-size: 0.9rem;
+    border-top: 1px solid rgba(30, 41, 59, 0.08);
+    padding-top: 25px;
+    font-weight: 500;
+}
+
+/* Responsividade para Celulares */
+@media (max-width: 768px) {
+    .glass-card {
+        padding: 40px 25px;
+        border-radius: 28px;
+    }
+
+    .main-title {
+        font-size: 2.2rem;
+    }
+
+    .subtitle {
+        font-size: 1.15rem;
+    }
+
+    .description {
+        font-size: 0.95rem;
+        max-width: 100%;
+        margin-bottom: 35px;
+    }
+
+    .brand-logo {
+        width: 72px;
+        height: 72px;
+        margin-bottom: 25px;
+        font-size: 1.5rem;
+    }
+
+    .btn-main {
+        width: 100%;
+        padding: 16px 24px;
+        box-sizing: border-box;
+    }
+}
