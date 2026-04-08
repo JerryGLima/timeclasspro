@@ -3,91 +3,82 @@ import { collection, query, where, getDocs, doc, getDoc, addDoc } from "https://
 import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { calculateTimeSlots, getCurrentLocation, calculateDistance } from './utils.js';
 
-let schoolCoords = { lat: 0, lng: 0 };
-let currentProfId = "";
-let schoolId = "";
+// Variáveis de controle globais
+let currentProfDocId = ""; 
+let schoolIdGlobal = "";
 
-// Função principal de inicialização
-async function initProfessorPanel(user) {
+async function loadDataAfterLogin(userEmail) {
     const area = document.getElementById('timetableContent');
-    if (!area) return;
-
-    console.log("Iniciando carregamento para:", user.email);
+    const emailLower = userEmail.toLowerCase().trim();
+    
+    console.log("Iniciando busca para o e-mail Google:", emailLower);
 
     try {
-        const emailBusca = user.email.toLowerCase().trim();
-
-        // 1. Localiza o professor pelo e-mail
-        const qProf = query(collection(db, "teachers"), where("email", "==", emailBusca));
+        // 1. Achar o documento do Professor pelo e-mail (O segredo está aqui)
+        const qProf = query(collection(db, "teachers"), where("email", "==", emailLower));
         const profSnap = await getDocs(qProf);
 
         if (profSnap.empty) {
-            console.error("E-mail não cadastrado na coleção teachers");
-            area.innerHTML = `<h3 style="color:red; text-align:center;">Acesso Negado: ${emailBusca} não é um professor cadastrado.</h3>`;
+            console.error("E-mail não encontrado na coleção 'teachers'");
+            area.innerHTML = `<h3 style="color:red; text-align:center;">Acesso Negado: O e-mail ${emailLower} não está na lista de professores cadastrados.</h3>`;
             return;
         }
 
+        // PEGA O ID DO DOCUMENTO (não o UID do Google)
         const profDoc = profSnap.docs[0];
-        currentProfId = profDoc.id; 
+        currentProfDocId = profDoc.id; 
         const profData = profDoc.data();
-        schoolId = profData.schoolId;
+        schoolIdGlobal = profData.schoolId;
 
-        // 2. Busca Escola (Com tratamento para erro de logo)
-        try {
-            const schoolSnap = await getDoc(doc(db, "schools", schoolId));
-            if (schoolSnap.exists()) {
-                const sData = schoolSnap.data();
-                schoolCoords = { lat: sData.latitude || 0, lng: sData.longitude || 0 };
-                document.getElementById('viewSchoolNameProf').textContent = sData.schoolName || "Escola";
-                
-                // Só tenta carregar o logo se o elemento existir e não estiver quebrado
-                const logoEl = document.getElementById('schoolLogoDisplay');
-                if(logoEl && sData.logoUrl) logoEl.src = sData.logoUrl;
-            }
-        } catch (err) { console.warn("Erro ao carregar dados da escola, mas prosseguindo..."); }
+        console.log("ID do Professor no Banco encontrado:", currentProfDocId);
 
+        // 2. Buscar Dados da Escola
+        const schoolSnap = await getDoc(doc(db, "schools", schoolIdGlobal));
+        if (schoolSnap.exists()) {
+            document.getElementById('viewSchoolNameProf').textContent = schoolSnap.data().schoolName || "Escola";
+        }
         document.getElementById('viewProfNameProf').textContent = profData.name;
 
-        // 3. Carrega Mapas de Matérias e Turmas
-        const subSnap = await getDocs(query(collection(db, "subjects"), where("schoolId", "==", schoolId)));
-        const grdSnap = await getDocs(query(collection(db, "grades"), where("schoolId", "==", schoolId)));
+        // 3. Carregar Matérias e Turmas
+        const [subSnap, grdSnap] = await Promise.all([
+            getDocs(query(collection(db, "subjects"), where("schoolId", "==", schoolIdGlobal))),
+            getDocs(query(collection(db, "grades"), where("schoolId", "==", schoolIdGlobal)))
+        ]);
 
         const subMap = {}; subSnap.forEach(d => subMap[d.id] = d.data());
         const grdMap = {}; grdSnap.forEach(d => grdMap[d.id] = d.data());
 
-        // 4. Busca a Grade de Horários REAL
-        const qSched = query(collection(db, "schedules"), where("teacherId", "==", currentProfId));
+        // 4. Buscar a Grade usando o ID DO DOCUMENTO DO PROFESSOR
+        const qSched = query(collection(db, "schedules"), where("teacherId", "==", currentProfDocId));
         const schedSnap = await getDocs(qSched);
         const myLessons = schedSnap.docs.map(d => d.data());
 
-        console.log("Aulas encontradas para este professor:", myLessons.length);
+        console.log("Total de aulas carregadas:", myLessons.length);
 
-        // 5. Busca Presenças
-        const today = new Date().toISOString().split('T')[0];
-        const qFreq = query(collection(db, "attendance"), where("teacherId", "==", currentProfId), where("date", "==", today));
-        const freqSnap = await getDocs(qFreq);
-        const checkins = freqSnap.docs.map(d => d.data());
+        if (myLessons.length === 0) {
+            area.innerHTML = "<p style='text-align:center;'>Nenhuma aula encontrada para o seu ID de professor.</p>";
+            return;
+        }
 
-        // 6. Configuração Visual
+        // 5. Renderização
         const config = Object.values(grdMap)[0] || { startTime: "07:15", lessonDuration: 50, intervalAfter: 3, intervalDuration: 15 };
-
-        // Renderiza as tabelas
-        renderDailyAgenda(myLessons, grdMap, subMap, config, checkins);
+        
+        // Chamada das suas funções de desenho (renderDailyAgenda e renderTablePremium)
+        // Certifique-se de que elas recebam esses dados novos
+        renderDailyAgenda(myLessons, grdMap, subMap, config, []); 
         renderTablePremium(myLessons, subMap, config);
 
-    } catch (e) {
-        console.error("Falha crítica no Firebase:", e);
-        area.innerHTML = `<h3>Erro ao carregar grade: ${e.message}</h3>`;
+    } catch (error) {
+        console.error("Erro crítico no Firebase:", error);
+        area.innerHTML = "<h3>Erro técnico ao carregar dados.</h3>";
     }
 }
 
-// Observador de Autenticação
+// Escuta o login do Google
 onAuthStateChanged(auth, (user) => {
     if (user) {
-        initProfessorPanel(user);
+        loadDataAfterLogin(user.email);
     } else {
         window.location.assign('login.html');
     }
 });
-
-// Mantenha suas funções renderDailyAgenda, renderTablePremium e doCheckin exatamente como estão.
