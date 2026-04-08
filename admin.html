@@ -15,7 +15,7 @@
         <aside class="sidebar" style="display: flex; flex-direction: column; justify-content: space-between; height: 100vh;">
             <div class="sidebar-top">
                 <div class="sidebar-logo">
-                    <img src="imagem/IMG-20260407-WA0005.jpg" style="width:32px; height:32px; border-radius:8px; object-fit:cover;" alt="Logo">
+                    <img src="imagem/ICONE.png" style="width:32px; height:32px; border-radius:8px; object-fit:cover;" alt="Logo">
                     <span>TimeClass Pro</span>
                 </div>
                 <nav>
@@ -54,7 +54,12 @@
                 
                 <div class="card" style="margin-top: 20px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                        <h3>🕒 Monitor em Tempo Real</h3>
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <h3 style="margin: 0;">🕒 Monitor em Tempo Real</h3>
+                            <button id="btnRefreshMonitor" title="Atualizar agora" style="background: none; border: 1px solid #e2e8f0; border-radius: 6px; padding: 5px 8px; cursor: pointer; color: #64748b; transition: 0.3s; display: flex; align-items: center; gap: 5px; font-size: 0.7rem; font-weight: 600;">
+                                <span id="iconRefresh">🔄</span> Atualizar
+                            </button>
+                        </div>
                         <div class="monitor-toggle">
                             <span id="txtToggle">Aulas de Agora</span>
                             <label class="switch"><input type="checkbox" id="checkMonitor"><span class="slider round"></span></label>
