@@ -3,26 +3,24 @@ import { collection, query, where, getDocs, doc, getDoc, addDoc } from "https://
 import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { calculateTimeSlots, getCurrentLocation, calculateDistance } from './utils.js';
 
-let schoolCoords = { lat: 0, lng: 0 };
 let currentProfId = "";
 let schoolIdGlobal = "";
-let currentProfName = "";
 
 onAuthStateChanged(auth, async (user) => {
     const area = document.getElementById('timetableContent');
-    if (user && user.email) {
-        console.log("Autenticado como:", user.email);
-        document.querySelectorAll('.currentYear').forEach(el => el.textContent = new Date().getFullYear());
-        
-        try {
-            const emailBusca = user.email.toLowerCase().trim();
+    if (!area) return;
 
-            // 1. LOCALIZAR PROFESSOR (PASSO CRÍTICO)
+    if (user && user.email) {
+        area.innerHTML = "<p style='text-align:center;'>Buscando seu horário no servidor...</p>";
+        const emailBusca = user.email.toLowerCase().trim();
+
+        try {
+            // 1. LOCALIZAR O PROFESSOR
             const qProf = query(collection(db, "teachers"), where("email", "==", emailBusca));
             const profSnap = await getDocs(qProf);
 
             if (profSnap.empty) {
-                area.innerHTML = `<h3 style="color:#ef4444; text-align:center; padding:20px;">Acesso Negado: E-mail ${emailBusca} não cadastrado.</h3>`;
+                area.innerHTML = `<h3 style="color:red; text-align:center;">E-mail ${emailBusca} não cadastrado.</h3>`;
                 return;
             }
 
@@ -30,20 +28,10 @@ onAuthStateChanged(auth, async (user) => {
             currentProfId = profDoc.id; 
             const profData = profDoc.data();
             schoolIdGlobal = profData.schoolId;
-            currentProfName = profData.name;
 
-            // 2. BUSCAR DADOS DA ESCOLA
-            const schoolSnap = await getDoc(doc(db, "schools", schoolIdGlobal));
-            if (schoolSnap.exists()) {
-                const sData = schoolSnap.data();
-                schoolCoords = { lat: sData.latitude || 0, lng: sData.longitude || 0 };
-                document.getElementById('viewSchoolNameProf').textContent = sData.schoolName || "TimeClass Pro";
-                if(sData.logoUrl) document.getElementById('schoolLogoDisplay').src = sData.logoUrl;
-            }
-            document.getElementById('viewProfNameProf').textContent = currentProfName;
-
-            // 3. CARREGAR MAPAS (SÓ AVANÇA QUANDO TIVER OS DOIS)
-            const [subSnap, grdSnap] = await Promise.all([
+            // 2. BUSCAR DADOS DA ESCOLA E MAPAS (Promise.all para velocidade)
+            const [schoolSnap, subSnap, grdSnap] = await Promise.all([
+                getDoc(doc(db, "schools", schoolIdGlobal)),
                 getDocs(query(collection(db, "subjects"), where("schoolId", "==", schoolIdGlobal))),
                 getDocs(query(collection(db, "grades"), where("schoolId", "==", schoolIdGlobal)))
             ]);
@@ -51,34 +39,37 @@ onAuthStateChanged(auth, async (user) => {
             const subMap = {}; subSnap.forEach(d => subMap[d.id] = d.data());
             const grdMap = {}; grdSnap.forEach(d => grdMap[d.id] = d.data());
 
-            // 4. BUSCAR AULAS E FREQUÊNCIA
-            const [schedSnap, freqSnap] = await Promise.all([
-                getDocs(query(collection(db, "schedules"), where("teacherId", "==", currentProfId))),
-                getDocs(query(collection(db, "attendance"), where("teacherId", "==", currentProfId), where("date", "==", new Date().toISOString().split('T')[0])))
-            ]);
+            if (schoolSnap.exists()) {
+                document.getElementById('viewSchoolNameProf').textContent = schoolSnap.data().schoolName;
+            }
+            document.getElementById('viewProfNameProf').textContent = profData.name;
 
+            // 3. BUSCAR A GRADE (O ponto onde pode estar falhando)
+            // Tentamos buscar as aulas vinculadas ao ID do documento do professor
+            const qSched = query(collection(db, "schedules"), where("teacherId", "==", currentProfId));
+            const schedSnap = await getDocs(qSched);
             const myLessons = schedSnap.docs.map(d => d.data());
-            const checkins = freqSnap.docs.map(d => d.data());
 
-            console.log("Aulas carregadas:", myLessons.length);
+            console.log("Aulas recuperadas:", myLessons.length);
 
-            // 5. CONFIGURAÇÃO DE TEMPO
-            // Busca a config da primeira turma que o prof tem aula, ou a primeira da escola
-            const firstGradeId = myLessons[0]?.gradeId || Object.keys(grdMap)[0];
-            const config = grdMap[firstGradeId] || { startTime: "07:15", lessonDuration: 50, intervalAfter: 3, intervalDuration: 15 };
+            if (myLessons.length === 0) {
+                area.innerHTML = `<p style='text-align:center; padding:20px;'>Nenhuma aula encontrada para o professor <b>${profData.name}</b>.<br>Verifique se o Administrador salvou a grade corretamente para você.</p>`;
+                return;
+            }
 
-            // 6. RENDERIZAR
-            renderDailyAgenda(myLessons, grdMap, subMap, config, checkins);
+            // 4. CONFIGURAÇÃO E RENDERIZAÇÃO
+            const config = Object.values(grdMap)[0] || { startTime: "07:15", lessonDuration: 50, intervalAfter: 3, intervalDuration: 15 };
+            
+            // Limpa a área antes de desenhar
+            area.innerHTML = "";
+            renderDailyAgenda(myLessons, grdMap, subMap, config, []); 
             renderTablePremium(myLessons, subMap, config);
 
         } catch (e) {
-            console.error("Erro fatal no carregamento:", e);
-            area.innerHTML = `<h3 style="text-align:center;">Erro ao carregar dados. <br><small>${e.message}</small></h3>`;
+            console.error("Erro crítico:", e);
+            area.innerHTML = "<h3>Erro de comunicação com o Firebase.</h3>";
         }
     } else if (user === null) {
         window.location.assign('login.html');
     }
 });
-
-// Mantenha suas funções renderDailyAgenda, renderTablePremium e doCheckin abaixo.
-// ELAS ESTÃO CORRETAS NO SEU ARQUIVO, mas certifique-se que o doCheckin use a variável 'currentProfId' capturada acima.
