@@ -61,8 +61,28 @@ function initNavigation() {
     document.getElementById('freqGradeFilter').onchange = () => loadAttendance();
 }
 
-// --- MONITOR EM TEMPO REAL COM BOTÃO DE SUBSTITUIÇÃO ---
-function startLiveMonitor() { updateLiveMonitor(); setInterval(updateLiveMonitor, 60000); }
+// --- MONITOR EM TEMPO REAL COM ATUALIZAÇÃO INTELIGENTE ---
+function startLiveMonitor() { 
+    updateLiveMonitor(); 
+    // Atualização automática a cada 10 minutos (600.000 ms)
+    setInterval(updateLiveMonitor, 600000); 
+
+    // Gatilho para o botão de atualização manual
+    const btnRefresh = document.getElementById('btnRefreshMonitor');
+    if (btnRefresh) {
+        btnRefresh.onclick = () => {
+            const icon = document.getElementById('iconRefresh');
+            icon.style.display = "inline-block";
+            icon.style.transition = "transform 0.5s ease";
+            icon.style.transform = "rotate(360deg)";
+            
+            updateLiveMonitor().then(() => {
+                setTimeout(() => { icon.style.transform = "rotate(0deg)"; }, 500);
+                console.log("Monitor atualizado manualmente.");
+            });
+        };
+    }
+}
 
 async function updateLiveMonitor() {
     const container = document.getElementById('liveMonitorContainer');
@@ -77,36 +97,46 @@ async function updateLiveMonitor() {
         return;
     }
 
-    const qSched = query(collection(db, "schedules"), where("schoolId", "==", schoolId), where("day", "==", today));
-    const schedSnap = await getDocs(qSched);
-    const schedules = schedSnap.docs.map(d => d.data());
+    try {
+        const qSched = query(collection(db, "schedules"), where("schoolId", "==", schoolId), where("day", "==", today));
+        const schedSnap = await getDocs(qSched);
+        const schedules = schedSnap.docs.map(d => d.data());
 
-    const pSnap = await getDocs(query(collection(db, "teachers"), where("schoolId", "==", schoolId)));
-    const pMap = {}; pSnap.forEach(d => pMap[d.id] = d.data().name);
+        const pSnap = await getDocs(query(collection(db, "teachers"), where("schoolId", "==", schoolId)));
+        const pMap = {}; pSnap.forEach(d => pMap[d.id] = d.data().name);
 
-    let html = "";
-    allGrades.forEach(grade => {
-        const [h, m] = grade.startTime.split(':').map(Number);
-        let startMins = h * 60 + m;
-        let activeP = -1;
-        for (let i = 1; i <= 7; i++) {
-            let pS = startMins + (i - 1) * grade.lessonDuration;
-            if (i > grade.intervalAfter) pS += grade.intervalDuration;
-            let pE = pS + grade.lessonDuration;
-            if (currentMins >= pS && currentMins < pE) { activeP = (monitorMode === "now") ? i : i + 1; break; }
-            else if (monitorMode === "next" && currentMins < pS) { activeP = i; break; }
-        }
-        const aula = schedules.find(s => s.gradeId === grade.id && s.period === activeP);
-        
-        html += `
-        <div class="monitor-card" style="border-left: 4px solid ${aula ? '#6366f1' : '#e2e8f0'}">
-            <span class="m-grade">${grade.name}</span>
-            <span class="m-sub">${aula ? (subjectMap[aula.subjectId]?.name || "Aula") : "Livre"}</span>
-            <span class="m-prof">${aula ? pMap[aula.teacherId] : "-"}</span>
-            ${aula ? `<button onclick="window.prepareQuickSub('${today}', ${activeP}, '${grade.id}')" style="margin-top:8px; font-size:0.6rem; background:#fee2e2; color:#ef4444; border:1px solid #fecaca; padding:4px; border-radius:4px; cursor:pointer; font-weight:700">⚠️ SUBSTITUIR</button>` : ''}
-        </div>`;
-    });
-    container.innerHTML = html;
+        let html = "";
+        allGrades.forEach(grade => {
+            const [h, m] = grade.startTime.split(':').map(Number);
+            let startMins = h * 60 + m;
+            let activeP = -1;
+            for (let i = 1; i <= 7; i++) {
+                let pS = startMins + (i - 1) * grade.lessonDuration;
+                if (i > grade.intervalAfter) pS += grade.intervalDuration;
+                let pE = pS + grade.lessonDuration;
+                if (currentMins >= pS && currentMins < pE) { 
+                    activeP = (monitorMode === "now") ? i : i + 1; 
+                    break; 
+                }
+                else if (monitorMode === "next" && currentMins < pS) { 
+                    activeP = i; 
+                    break; 
+                }
+            }
+            const aula = schedules.find(s => s.gradeId === grade.id && s.period === activeP);
+            
+            html += `
+            <div class="monitor-card" style="border-left: 4px solid ${aula ? '#6366f1' : '#e2e8f0'}">
+                <span class="m-grade">${grade.name}</span>
+                <span class="m-sub">${aula ? (subjectMap[aula.subjectId]?.name || "Aula") : "Livre"}</span>
+                <span class="m-prof">${aula ? pMap[aula.teacherId] : "-"}</span>
+                ${aula ? `<button onclick="window.prepareQuickSub('${today}', ${activeP}, '${grade.id}')" style="margin-top:8px; font-size:0.6rem; background:#fee2e2; color:#ef4444; border:1px solid #fecaca; padding:4px; border-radius:4px; cursor:pointer; font-weight:700">⚠️ SUBSTITUIR</button>` : ''}
+            </div>`;
+        });
+        container.innerHTML = html;
+    } catch (error) {
+        console.error("Erro ao carregar monitor:", error);
+    }
 }
 
 // --- LOGICA DE SUBSTITUIÇÃO ---
@@ -199,9 +229,8 @@ async function loadAttendance() {
         let statusText = log ? (log.manual ? "Confirmado Manual" : `Iniciado às ${log.time}`) : "Pendente / Falta";
         let subInfo = "";
 
-        // Lógica visual para exibir quem substituiu quem
         if (log && log.isSubstitution) {
-            statusColor = "#6366f1"; // Roxo para destaque
+            statusColor = "#6366f1"; 
             const titular = pMap[s.teacherId] || "Titular";
             const substituto = pMap[log.teacherId] || "Substituto";
             subInfo = `
