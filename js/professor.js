@@ -9,12 +9,14 @@ let schoolId = "";
 let currentProfName = "";
 
 onAuthStateChanged(auth, async (user) => {
+    // 🔥 DIAGNÓSTICO PRINCIPAL
+    console.log("🔥 AUTH STATE:", user ? user.email : "NULL - não logado");
+
     if (user && user.email) {
         document.querySelectorAll('.currentYear').forEach(el => el.textContent = new Date().getFullYear());
         try {
             const emailB = user.email.toLowerCase().trim();
 
-            // ✅ DIAGNÓSTICO: mostra o email que está sendo buscado
             console.log("✅ Usuário logado:", user.email);
             console.log("🔍 Buscando professor com email:", emailB);
 
@@ -24,7 +26,6 @@ onAuthStateChanged(auth, async (user) => {
             console.log("📋 Documentos encontrados:", profSnap.size);
 
             if (profSnap.empty) {
-                // ✅ CORREÇÃO: mostra mensagem clara com o email buscado
                 document.getElementById('timetableContent').innerHTML = `
                     <div style="padding: 30px; text-align: center; color: #ef4444;">
                         <h3>⚠️ Professor não encontrado</h3>
@@ -83,7 +84,6 @@ onAuthStateChanged(auth, async (user) => {
             renderTablePremium(myLessons, subMap, firstGradeConfig);
 
         } catch (e) {
-            // ✅ CORREÇÃO: erro agora aparece na tela em vez de sumir em silêncio
             console.error("❌ Erro ao carregar dados do professor:", e);
             document.getElementById('timetableContent').innerHTML = `
                 <div style="padding: 30px; text-align: center; color: #ef4444;">
@@ -93,6 +93,7 @@ onAuthStateChanged(auth, async (user) => {
                 </div>`;
         }
     } else if (user === null) {
+        console.log("🚫 Usuário não logado, redirecionando para login...");
         window.location.assign('login.html');
     }
 });
@@ -165,7 +166,6 @@ function renderTablePremium(lessons, subMap, config) {
     area.innerHTML = html;
 }
 
-// --- FUNÇÃO DE DOWNLOAD CORRIGIDA PARA PAISAGEM ---
 document.getElementById('btnDownloadPdf').onclick = () => {
     const element = document.getElementById('printArea');
     const footer = document.getElementById('pdfFooterProf');
