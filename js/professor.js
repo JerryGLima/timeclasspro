@@ -1,6 +1,6 @@
 import { db, auth } from './firebase-config.js';
 import { collection, query, where, getDocs, doc, getDoc, addDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { calculateTimeSlots, getCurrentLocation, calculateDistance } from './utils.js';
 
 let schoolCoords = { lat: 0, lng: 0 };
@@ -8,21 +8,34 @@ let currentProfId = "";
 let schoolId = "";
 let currentProfName = "";
 
+// ✅ CORREÇÃO: garante que a sessão persiste no localStorage do navegador
+setPersistence(auth, browserLocalPersistence).then(() => {
+    console.log("✅ Persistência configurada.");
+}).catch(e => console.error("Erro persistência:", e));
+
+// ✅ CORREÇÃO: aguarda até 5 segundos pela sessão antes de redirecionar
+let authResolved = false;
+const redirectTimeout = setTimeout(() => {
+    if (!authResolved) {
+        console.log("⏱️ Timeout: sessão não restaurada, redirecionando para login.");
+        window.location.assign('login.html');
+    }
+}, 5000);
+
 onAuthStateChanged(auth, async (user) => {
-    // 🔥 DIAGNÓSTICO PRINCIPAL
-    console.log("🔥 AUTH STATE:", user ? user.email : "NULL - não logado");
+    authResolved = true;
+    clearTimeout(redirectTimeout);
+
+    console.log("🔥 AUTH STATE:", user ? user.email : "NULL");
 
     if (user && user.email) {
         document.querySelectorAll('.currentYear').forEach(el => el.textContent = new Date().getFullYear());
         try {
             const emailB = user.email.toLowerCase().trim();
-
-            console.log("✅ Usuário logado:", user.email);
             console.log("🔍 Buscando professor com email:", emailB);
 
             const qProf = query(collection(db, "teachers"), where("email", "==", emailB));
             const profSnap = await getDocs(qProf);
-
             console.log("📋 Documentos encontrados:", profSnap.size);
 
             if (profSnap.empty) {
@@ -32,20 +45,20 @@ onAuthStateChanged(auth, async (user) => {
                         <p>Nenhum cadastro encontrado para o email:</p>
                         <strong style="background:#fee2e2; padding:8px 16px; border-radius:8px; display:inline-block; margin-top:8px;">${emailB}</strong>
                         <p style="margin-top:16px; color:#64748b; font-size:0.85rem;">
-                            Peça ao administrador para verificar se este email está cadastrado corretamente na seção de Professores.
+                            Peça ao administrador para verificar se este email está cadastrado corretamente.
                         </p>
                     </div>`;
                 document.getElementById('viewProfNameProf').textContent = "Não encontrado";
                 return;
             }
-            
+
             const profDoc = profSnap.docs[0];
             const profData = profDoc.data();
             currentProfId = profDoc.id;
             currentProfName = profData.name;
             schoolId = profData.schoolId;
 
-            console.log("✅ Professor encontrado:", profData.name, "| ID:", currentProfId, "| schoolId:", schoolId);
+            console.log("✅ Professor encontrado:", profData.name, "| schoolId:", schoolId);
 
             const schoolSnap = await getDoc(doc(db, "schools", schoolId));
             const sData = schoolSnap.exists() ? schoolSnap.data() : {};
@@ -63,7 +76,6 @@ onAuthStateChanged(auth, async (user) => {
             const qSched = query(collection(db, "schedules"), where("teacherId", "==", currentProfId));
             const schedSnap = await getDocs(qSched);
             const myLessons = schedSnap.docs.map(d => d.data());
-
             console.log("📅 Aulas encontradas:", myLessons.length);
 
             if (myLessons.length === 0) {
@@ -84,16 +96,15 @@ onAuthStateChanged(auth, async (user) => {
             renderTablePremium(myLessons, subMap, firstGradeConfig);
 
         } catch (e) {
-            console.error("❌ Erro ao carregar dados do professor:", e);
+            console.error("❌ Erro:", e);
             document.getElementById('timetableContent').innerHTML = `
                 <div style="padding: 30px; text-align: center; color: #ef4444;">
                     <h3>❌ Erro ao carregar dados</h3>
                     <p style="font-size:0.85rem; color:#64748b;">${e.message}</p>
-                    <p style="margin-top:12px; font-size:0.8rem; color:#94a3b8;">Verifique as permissões do Firestore ou contate o suporte.</p>
                 </div>`;
         }
     } else if (user === null) {
-        console.log("🚫 Usuário não logado, redirecionando para login...");
+        console.log("🚫 Sem sessão, redirecionando para login...");
         window.location.assign('login.html');
     }
 });
@@ -169,29 +180,15 @@ function renderTablePremium(lessons, subMap, config) {
 document.getElementById('btnDownloadPdf').onclick = () => {
     const element = document.getElementById('printArea');
     const footer = document.getElementById('pdfFooterProf');
-    
     footer.style.display = 'block';
-
     const opt = {
         margin: [5, 5, 5, 5],
         filename: `Horario_${currentProfName}.pdf`,
         image: { type: 'jpeg', quality: 1 },
-        html2canvas: { 
-            scale: 2, 
-            useCORS: true, 
-            backgroundColor: '#ffffff',
-            letterRendering: true
-        },
-        jsPDF: { 
-            unit: 'mm', 
-            format: 'a4', 
-            orientation: 'landscape'
-        }
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', letterRendering: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
     };
-
-    html2pdf().from(element).set(opt).save().then(() => {
-        footer.style.display = 'none';
-    });
+    html2pdf().from(element).set(opt).save().then(() => { footer.style.display = 'none'; });
 };
 
 document.getElementById('btnLogoutProf').onclick = () => signOut(auth).then(() => window.location.assign('login.html'));
