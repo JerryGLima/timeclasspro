@@ -3,8 +3,7 @@ import { auth, db, googleProvider } from './firebase-config.js';
 import { 
     signInWithEmailAndPassword, 
     createUserWithEmailAndPassword,
-    signInWithRedirect,
-    getRedirectResult,
+    signInWithPopup,
     onAuthStateChanged,
     updateProfile,
     signOut
@@ -48,9 +47,7 @@ if (toggleBtn) {
     toggleBtn.onclick = (e) => {
         e.preventDefault();
         isRegisterMode = !isRegisterMode;
-        
         if(registerFields) registerFields.classList.toggle('hidden');
-        
         btnSubmitAdmin.textContent = isRegisterMode ? "Criar Minha Escola" : "Entrar no Painel";
         authText.textContent = isRegisterMode ? "Já tem conta?" : "Ainda não tem conta?";
         toggleBtn.textContent = isRegisterMode ? "Fazer Login" : "Criar conta para minha escola";
@@ -64,82 +61,61 @@ if (adminForm) {
         e.preventDefault();
         const email = document.getElementById('adminEmail').value;
         const password = document.getElementById('adminPassword').value;
-
         try {
             if (isRegisterMode) {
                 const schoolName = document.getElementById('schoolName').value;
-                if (!schoolName) {
-                    errorEl.textContent = "Por favor, digite o nome da escola.";
-                    return;
-                }
-
+                if (!schoolName) { errorEl.textContent = "Por favor, digite o nome da escola."; return; }
                 const userCred = await createUserWithEmailAndPassword(auth, email, password);
                 const user = userCred.user;
-
                 await setDoc(doc(db, "schools", user.uid), {
-                    schoolName: schoolName,
-                    adminEmail: email,
-                    intervalAfter: 4,
-                    createdAt: new Date().toISOString()
+                    schoolName, adminEmail: email, intervalAfter: 4, createdAt: new Date().toISOString()
                 });
-
                 await updateProfile(user, { displayName: schoolName });
                 alert("Escola cadastrada com sucesso! Bem-vindo ao painel.");
             } else {
                 await signInWithEmailAndPassword(auth, email, password);
             }
-            
             window.location.assign('admin.html');
-
         } catch (error) {
             console.error("Erro Auth:", error.code);
             switch (error.code) {
-                case 'auth/invalid-credential':
-                    errorEl.textContent = "E-mail ou senha incorretos.";
-                    break;
-                case 'auth/email-already-in-use':
-                    errorEl.textContent = "Este e-mail já está sendo usado por outra escola.";
-                    break;
-                case 'auth/weak-password':
-                    errorEl.textContent = "A senha deve ter pelo menos 6 caracteres.";
-                    break;
-                case 'auth/user-not-found':
-                    errorEl.textContent = "Usuário não encontrado.";
-                    break;
-                default:
-                    errorEl.textContent = "Erro ao acessar: " + error.message;
+                case 'auth/invalid-credential': errorEl.textContent = "E-mail ou senha incorretos."; break;
+                case 'auth/email-already-in-use': errorEl.textContent = "Este e-mail já está sendo usado."; break;
+                case 'auth/weak-password': errorEl.textContent = "A senha deve ter pelo menos 6 caracteres."; break;
+                case 'auth/user-not-found': errorEl.textContent = "Usuário não encontrado."; break;
+                default: errorEl.textContent = "Erro ao acessar: " + error.message;
             }
         }
     };
 }
 
-// --- 4. LOGIN DO PROFESSOR (GOOGLE) ---
+// --- 4. LOGIN DO PROFESSOR (GOOGLE COM POPUP) ---
 const googleBtn = document.getElementById('googleLoginBtn');
 if (googleBtn) {
     googleBtn.onclick = async () => {
         try {
-            console.log("Iniciando Login Google via Redirect...");
-            // ✅ CORREÇÃO: usa redirect em vez de popup (mais confiável no GitHub Pages)
-            await signInWithRedirect(auth, googleProvider);
+            console.log("Iniciando Login Google...");
+            // Configura o provider para sempre pedir conta
+            googleProvider.setCustomParameters({ prompt: 'select_account' });
+            const result = await signInWithPopup(auth, googleProvider);
+            console.log("✅ Login Google OK:", result.user.email);
+            // ✅ CORREÇÃO: redireciona DIRETAMENTE após o popup fechar com sucesso
+            window.location.assign('professor.html');
         } catch (error) {
             console.error("Erro Google:", error);
-            if(errorEl) errorEl.textContent = "Erro ao entrar com Google: " + error.message;
+            if (error.code === 'auth/popup-blocked') {
+                alert("O navegador bloqueou o login. Por favor, ative os pop-ups para este site.");
+            } else if (error.code === 'auth/popup-closed-by-user') {
+                // Usuário fechou o popup, não faz nada
+                console.log("Popup fechado pelo usuário.");
+            } else {
+                if(errorEl) errorEl.textContent = "Erro ao entrar com Google: " + error.message;
+            }
         }
     };
 }
 
-// --- 5. CAPTURA O RESULTADO DO REDIRECT DO GOOGLE ---
-getRedirectResult(auth).then((result) => {
-    if (result && result.user) {
-        console.log("✅ Login Google OK:", result.user.email);
-        window.location.assign('professor.html');
-    }
-}).catch((error) => {
-    console.error("Erro no redirect Google:", error);
-    if(errorEl) errorEl.textContent = "Erro ao entrar com Google: " + error.message;
-});
-
-// --- 6. MONITOR DE SESSÃO (REDIRECIONAMENTO AUTOMÁTICO) ---
+// --- 5. MONITOR DE SESSÃO ---
 onAuthStateChanged(auth, (user) => {
     const path = window.location.pathname;
 
@@ -150,6 +126,7 @@ onAuthStateChanged(auth, (user) => {
     }
 
     if (user) {
+        // Usuário já logado na tela de login → redireciona
         const isGoogle = user.providerData.some(p => p.providerId === 'google.com');
         if (isGoogle) {
             window.location.assign('professor.html');
@@ -159,7 +136,7 @@ onAuthStateChanged(auth, (user) => {
     }
 });
 
-// --- 7. FUNÇÃO DE LOGOUT ---
+// --- 6. FUNÇÃO DE LOGOUT ---
 window.logoutUser = () => {
     signOut(auth).then(() => {
         window.location.assign('login.html');
