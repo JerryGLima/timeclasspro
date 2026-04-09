@@ -13,15 +13,38 @@ onAuthStateChanged(auth, async (user) => {
         document.querySelectorAll('.currentYear').forEach(el => el.textContent = new Date().getFullYear());
         try {
             const emailB = user.email.toLowerCase().trim();
+
+            // ✅ DIAGNÓSTICO: mostra o email que está sendo buscado
+            console.log("✅ Usuário logado:", user.email);
+            console.log("🔍 Buscando professor com email:", emailB);
+
             const qProf = query(collection(db, "teachers"), where("email", "==", emailB));
             const profSnap = await getDocs(qProf);
-            if (profSnap.empty) { document.getElementById('timetableContent').innerHTML = "<h3>Cadastro não localizado.</h3>"; return; }
+
+            console.log("📋 Documentos encontrados:", profSnap.size);
+
+            if (profSnap.empty) {
+                // ✅ CORREÇÃO: mostra mensagem clara com o email buscado
+                document.getElementById('timetableContent').innerHTML = `
+                    <div style="padding: 30px; text-align: center; color: #ef4444;">
+                        <h3>⚠️ Professor não encontrado</h3>
+                        <p>Nenhum cadastro encontrado para o email:</p>
+                        <strong style="background:#fee2e2; padding:8px 16px; border-radius:8px; display:inline-block; margin-top:8px;">${emailB}</strong>
+                        <p style="margin-top:16px; color:#64748b; font-size:0.85rem;">
+                            Peça ao administrador para verificar se este email está cadastrado corretamente na seção de Professores.
+                        </p>
+                    </div>`;
+                document.getElementById('viewProfNameProf').textContent = "Não encontrado";
+                return;
+            }
             
             const profDoc = profSnap.docs[0];
             const profData = profDoc.data();
             currentProfId = profDoc.id;
             currentProfName = profData.name;
             schoolId = profData.schoolId;
+
+            console.log("✅ Professor encontrado:", profData.name, "| ID:", currentProfId, "| schoolId:", schoolId);
 
             const schoolSnap = await getDoc(doc(db, "schools", schoolId));
             const sData = schoolSnap.exists() ? schoolSnap.data() : {};
@@ -40,6 +63,16 @@ onAuthStateChanged(auth, async (user) => {
             const schedSnap = await getDocs(qSched);
             const myLessons = schedSnap.docs.map(d => d.data());
 
+            console.log("📅 Aulas encontradas:", myLessons.length);
+
+            if (myLessons.length === 0) {
+                document.getElementById('timetableContent').innerHTML = `
+                    <div style="padding: 30px; text-align: center; color: #64748b;">
+                        <h3>📭 Nenhuma aula cadastrada</h3>
+                        <p>O administrador ainda não montou a grade para este professor.</p>
+                    </div>`;
+            }
+
             const qFreq = query(collection(db, "attendance"), where("teacherId", "==", currentProfId), where("date", "==", new Date().toISOString().split('T')[0]));
             const freqSnap = await getDocs(qFreq);
             const checkins = freqSnap.docs.map(d => d.data());
@@ -48,8 +81,20 @@ onAuthStateChanged(auth, async (user) => {
 
             renderDailyAgenda(myLessons, gradesMap, subMap, firstGradeConfig, checkins);
             renderTablePremium(myLessons, subMap, firstGradeConfig);
-        } catch (e) { console.error(e); }
-    } else if (user === null) window.location.assign('login.html');
+
+        } catch (e) {
+            // ✅ CORREÇÃO: erro agora aparece na tela em vez de sumir em silêncio
+            console.error("❌ Erro ao carregar dados do professor:", e);
+            document.getElementById('timetableContent').innerHTML = `
+                <div style="padding: 30px; text-align: center; color: #ef4444;">
+                    <h3>❌ Erro ao carregar dados</h3>
+                    <p style="font-size:0.85rem; color:#64748b;">${e.message}</p>
+                    <p style="margin-top:12px; font-size:0.8rem; color:#94a3b8;">Verifique as permissões do Firestore ou contate o suporte.</p>
+                </div>`;
+        }
+    } else if (user === null) {
+        window.location.assign('login.html');
+    }
 });
 
 function renderDailyAgenda(lessons, gradesMap, subMap, config, checkins) {
@@ -125,7 +170,7 @@ document.getElementById('btnDownloadPdf').onclick = () => {
     const element = document.getElementById('printArea');
     const footer = document.getElementById('pdfFooterProf');
     
-    footer.style.display = 'block'; // Mostra direitos reservados no PDF
+    footer.style.display = 'block';
 
     const opt = {
         margin: [5, 5, 5, 5],
@@ -140,7 +185,7 @@ document.getElementById('btnDownloadPdf').onclick = () => {
         jsPDF: { 
             unit: 'mm', 
             format: 'a4', 
-            orientation: 'landscape' // <--- ISSO RESOLVE O PROBLEMA DE CORTAR
+            orientation: 'landscape'
         }
     };
 
