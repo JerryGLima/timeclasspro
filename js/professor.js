@@ -1,3 +1,4 @@
+// js/professor.js
 import { db, auth } from './firebase-config.js';
 import { collection, query, where, getDocs, doc, getDoc, addDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
@@ -6,20 +7,55 @@ import { calculateTimeSlots, getCurrentLocation, calculateDistance } from './uti
 let schoolCoords = { lat: 0, lng: 0 };
 let currentProfId = "";
 let schoolId = "";
+let currentProfName = "";
+
+// ✅ Aguarda até 8 segundos pela sessão antes de redirecionar para login
+// Necessário pois o GitHub Pages pode demorar para restaurar a sessão do Firebase
+let authResolved = false;
+const redirectTimeout = setTimeout(() => {
+    if (!authResolved) {
+        console.log("⏱️ Timeout: sessão não restaurada.");
+        window.location.assign('login.html');
+    }
+}, 8000);
 
 onAuthStateChanged(auth, async (user) => {
+    authResolved = true;
+    clearTimeout(redirectTimeout);
+
+    console.log("🔥 AUTH STATE:", user ? user.email : "NULL");
+
     if (user && user.email) {
         document.querySelectorAll('.currentYear').forEach(el => el.textContent = new Date().getFullYear());
         try {
             const emailB = user.email.toLowerCase().trim();
+            console.log("🔍 Buscando professor:", emailB);
+
             const qProf = query(collection(db, "teachers"), where("email", "==", emailB));
             const profSnap = await getDocs(qProf);
-            if (profSnap.empty) { document.getElementById('timetableContent').innerHTML = "<h3>Cadastro não localizado.</h3>"; return; }
-            
+            console.log("📋 Docs encontrados:", profSnap.size);
+
+            if (profSnap.empty) {
+                document.getElementById('timetableContent').innerHTML = `
+                    <div style="padding: 30px; text-align: center; color: #ef4444;">
+                        <h3>⚠️ Professor não encontrado</h3>
+                        <p>Nenhum cadastro para o email:</p>
+                        <strong style="background:#fee2e2; padding:8px 16px; border-radius:8px; display:inline-block; margin-top:8px;">${emailB}</strong>
+                        <p style="margin-top:16px; color:#64748b; font-size:0.85rem;">
+                            Peça ao administrador para verificar se este email está cadastrado corretamente.
+                        </p>
+                    </div>`;
+                document.getElementById('viewProfNameProf').textContent = "Não encontrado";
+                return;
+            }
+
             const profDoc = profSnap.docs[0];
             const profData = profDoc.data();
             currentProfId = profDoc.id;
+            currentProfName = profData.name;
             schoolId = profData.schoolId;
+
+            console.log("✅ Professor:", profData.name, "| schoolId:", schoolId);
 
             const schoolSnap = await getDoc(doc(db, "schools", schoolId));
             const sData = schoolSnap.exists() ? schoolSnap.data() : {};
@@ -31,49 +67,65 @@ onAuthStateChanged(auth, async (user) => {
 
             const gradesSnap = await getDocs(query(collection(db, "grades"), where("schoolId", "==", schoolId)));
             const gradesMap = {}; gradesSnap.forEach(d => gradesMap[d.id] = d.data());
+
             const subSnap = await getDocs(query(collection(db, "subjects"), where("schoolId", "==", schoolId)));
             const subMap = {}; subSnap.forEach(d => subMap[d.id] = d.data());
 
-            const qSched = query(collection(db, "schedules"), where("teacherId", "==", profDoc.id));
+            const qSched = query(collection(db, "schedules"), where("teacherId", "==", currentProfId));
             const schedSnap = await getDocs(qSched);
             const myLessons = schedSnap.docs.map(d => d.data());
+            console.log("📅 Aulas:", myLessons.length);
 
-            const qFreq = query(collection(db, "attendance"), where("teacherId", "==", profDoc.id), where("date", "==", new Date().toISOString().split('T')[0]));
+            const qFreq = query(collection(db, "attendance"), where("teacherId", "==", currentProfId), where("date", "==", new Date().toISOString().split('T')[0]));
             const freqSnap = await getDocs(qFreq);
             const checkins = freqSnap.docs.map(d => d.data());
 
-            renderDailyAgenda(myLessons, gradesMap, subMap, gradesMap[profData.vinculos[0]?.grdId], checkins);
-            renderTablePremiumA4(myLessons, subMap, gradesMap[profData.vinculos[0]?.grdId]);
-        } catch (e) { console.error(e); }
-    } else if (user === null) window.location.assign('login.html');
+            const firstGradeConfig = gradesMap[profData.vinculos?.[0]?.grdId] 
+                || Object.values(gradesMap)[0] 
+                || { startTime: "07:15", lessonDuration: 50, intervalAfter: 3, intervalDuration: 15 };
+
+            renderDailyAgenda(myLessons, gradesMap, subMap, firstGradeConfig, checkins);
+            renderTablePremium(myLessons, subMap, firstGradeConfig);
+
+        } catch (e) {
+            console.error("❌ Erro:", e);
+            document.getElementById('timetableContent').innerHTML = `
+                <div style="padding: 30px; text-align: center; color: #ef4444;">
+                    <h3>❌ Erro ao carregar dados</h3>
+                    <p style="font-size:0.85rem; color:#64748b;">${e.message}</p>
+                </div>`;
+        }
+    } else if (user === null) {
+        console.log("🚫 Sem sessão, redirecionando...");
+        window.location.assign('login.html');
+    }
 });
 
 function renderDailyAgenda(lessons, gradesMap, subMap, config, checkins) {
     const container = document.getElementById('dailyAgendaScroll');
-    const label = document.getElementById('todayLabel');
     const now = new Date();
     const days = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
     const today = days[now.getDay()];
     const currentMins = now.getHours() * 60 + now.getMinutes();
-    label.textContent = today;
+    document.getElementById('todayLabel').textContent = today;
     if(now.getDay() === 0 || now.getDay() === 6) { container.innerHTML = "<p>Final de semana!</p>"; return; }
-    
+
     const times = calculateTimeSlots(config.startTime, config.lessonDuration, 7, config.intervalAfter, config.intervalDuration);
     const [h, m] = config.startTime.split(':').map(Number);
     let startM = h * 60 + m;
     let html = "";
-    for(let i=1; i<=7; i++) {
+
+    for(let i = 1; i <= 7; i++) {
         let pS = startM + (i-1) * config.lessonDuration;
         if (i > config.intervalAfter) pS += config.intervalDuration;
         let pE = pS + config.lessonDuration;
         const isNow = (currentMins >= pS && currentMins < pE);
         const aula = lessons.find(l => l.day === today && l.period == i);
-        
+
         if(aula) {
             const s = subMap[aula.subjectId] || {name:'Aula', color:'#6366f1'};
             const g = gradesMap[aula.gradeId] || {name:'Turma'};
             const jaFezCheckin = checkins.some(c => c.gradeId === aula.gradeId && c.period === i);
-
             html += `
                 <div class="agenda-card ${isNow ? 'active' : ''}" style="border-left: 5px solid ${s.color}; background: ${jaFezCheckin ? '#f0fdf4' : 'white'}">
                     <small>${times[i-1]}</small><strong>${g.name}</strong><span>${s.name}</span>
@@ -87,17 +139,24 @@ function renderDailyAgenda(lessons, gradesMap, subMap, config, checkins) {
 
 window.doCheckin = async (gradeId, period) => {
     try {
-        if (!schoolCoords.lat) return alert("Erro: GPS da escola não configurado.");
+        if (!schoolCoords.lat) return alert("GPS da escola não configurado.");
         const userLoc = await getCurrentLocation();
         const distance = calculateDistance(userLoc.lat, userLoc.lng, schoolCoords.lat, schoolCoords.lng);
-        if (distance > 200) return alert(`Ops! Você está a ${Math.round(distance)}m da escola. O ponto só pode ser batido nas dependências da instituição.`);
+        if (distance > 200) return alert(`Você está a ${Math.round(distance)}m da escola. O ponto só pode ser batido nas dependências da instituição.`);
         const now = new Date();
-        await addDoc(collection(db, "attendance"), { schoolId, gradeId, period, teacherId: currentProfId, date: now.toISOString().split('T')[0], time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), timestamp: now.toISOString(), manual: false });
-        alert("Ponto registrado!"); location.reload();
+        await addDoc(collection(db, "attendance"), {
+            schoolId, gradeId, period, teacherId: currentProfId,
+            date: now.toISOString().split('T')[0],
+            time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            timestamp: now.toISOString(),
+            manual: false
+        });
+        alert("Ponto registrado!"); 
+        location.reload();
     } catch (e) { alert(e.message); }
 };
 
-function renderTablePremiumA4(lessons, subMap, config) {
+function renderTablePremium(lessons, subMap, config) {
     const area = document.getElementById('timetableContent');
     const days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'];
     const times = calculateTimeSlots(config.startTime, config.lessonDuration, 7, config.intervalAfter, config.intervalDuration);
@@ -118,4 +177,19 @@ function renderTablePremiumA4(lessons, subMap, config) {
     html += `</tbody></table>`;
     area.innerHTML = html;
 }
+
+document.getElementById('btnDownloadPdf').onclick = () => {
+    const element = document.getElementById('printArea');
+    const footer = document.getElementById('pdfFooterProf');
+    footer.style.display = 'block';
+    const opt = {
+        margin: [5, 5, 5, 5],
+        filename: `Horario_${currentProfName}.pdf`,
+        image: { type: 'jpeg', quality: 1 },
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', letterRendering: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
+    };
+    html2pdf().from(element).set(opt).save().then(() => { footer.style.display = 'none'; });
+};
+
 document.getElementById('btnLogoutProf').onclick = () => signOut(auth).then(() => window.location.assign('login.html'));
