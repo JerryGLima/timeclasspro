@@ -5,7 +5,8 @@ import { getStorage } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-s
 
 const firebaseConfig = {
   apiKey: "AIzaSyARF0_xRnR9GxNrWGCcL3TzL0t_NypubOs",
-  authDomain: "jerryglima.github.io",
+  // ✅ RESTAURADO: authDomain original do Firebase (necessário para o popup funcionar)
+  authDomain: "sgh-escolar-pro.firebaseapp.com",
   projectId: "sgh-escolar-pro",
   storageBucket: "sgh-escolar-pro.firebasestorage.app",
   messagingSenderId: "1025151302386",
@@ -18,5 +19,5 @@ export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
 
-// ✅ Garante que a sessão persiste entre páginas no GitHub Pages
+// ✅ Garante persistência da sessão no localStorage
 setPersistence(auth, browserLocalPersistence).catch(e => console.error("Erro persistência:", e));
