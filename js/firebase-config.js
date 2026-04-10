@@ -1,10 +1,11 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getAuth, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getStorage } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyARF0_xRnR9GxNrWGCcL3TzL0t_NypubOs",
+  // ✅ RESTAURADO: authDomain original do Firebase (necessário para o popup funcionar)
   authDomain: "sgh-escolar-pro.firebaseapp.com",
   projectId: "sgh-escolar-pro",
   storageBucket: "sgh-escolar-pro.firebasestorage.app",
@@ -17,3 +18,6 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
+
+// ✅ Garante persistência da sessão no localStorage
+setPersistence(auth, browserLocalPersistence).catch(e => console.error("Erro persistência:", e));
