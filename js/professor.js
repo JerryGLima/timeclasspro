@@ -1,7 +1,7 @@
 // js/professor.js
 import { db, auth } from './firebase-config.js';
 import { collection, query, where, getDocs, doc, getDoc, addDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { onAuthStateChanged, signOut, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { calculateTimeSlots, getCurrentLocation, calculateDistance } from './utils.js';
 
 let schoolCoords = { lat: 0, lng: 0 };
@@ -9,105 +9,115 @@ let currentProfId = "";
 let schoolId = "";
 let currentProfName = "";
 
-// ✅ Verifica se veio de um login Google recente
-const acabouDeLogar = sessionStorage.getItem('googleLoginSuccess') === 'true';
-if (acabouDeLogar) {
-    sessionStorage.removeItem('googleLoginSuccess');
-    console.log("🔑 Veio de login Google recente, aguardando sessão...");
-}
-
-// ✅ Tempo de espera maior se veio de login recente
-const tempoEspera = acabouDeLogar ? 10000 : 5000;
 let authResolved = false;
 
-const redirectTimeout = setTimeout(() => {
+// ✅ Se Firebase session for null, tenta usar email salvo no localStorage
+const redirectTimeout = setTimeout(async () => {
     if (!authResolved) {
-        console.log("⏱️ Timeout: redirecionando para login...");
-        window.location.assign('login.html');
+        const profEmail = localStorage.getItem('profEmail');
+        if (profEmail) {
+            console.log("⚡ Usando email do localStorage:", profEmail);
+            authResolved = true;
+            await carregarDadosProfessor(profEmail);
+        } else {
+            console.log("⏱️ Timeout: redirecionando para login...");
+            window.location.assign('login.html');
+        }
     }
-}, tempoEspera);
+}, 5000);
 
 onAuthStateChanged(auth, async (user) => {
     authResolved = true;
     clearTimeout(redirectTimeout);
-
     console.log("🔥 AUTH STATE:", user ? user.email : "NULL");
 
     if (user && user.email) {
-        document.querySelectorAll('.currentYear').forEach(el => el.textContent = new Date().getFullYear());
-        try {
-            const emailB = user.email.toLowerCase().trim();
-            console.log("🔍 Buscando professor:", emailB);
-
-            const qProf = query(collection(db, "teachers"), where("email", "==", emailB));
-            const profSnap = await getDocs(qProf);
-            console.log("📋 Docs encontrados:", profSnap.size);
-
-            if (profSnap.empty) {
-                document.getElementById('timetableContent').innerHTML = `
-                    <div style="padding: 30px; text-align: center; color: #ef4444;">
-                        <h3>⚠️ Professor não encontrado</h3>
-                        <p>Nenhum cadastro para o email:</p>
-                        <strong style="background:#fee2e2; padding:8px 16px; border-radius:8px; display:inline-block; margin-top:8px;">${emailB}</strong>
-                        <p style="margin-top:16px; color:#64748b; font-size:0.85rem;">
-                            Peça ao administrador para verificar se este email está cadastrado corretamente.
-                        </p>
-                    </div>`;
-                document.getElementById('viewProfNameProf').textContent = "Não encontrado";
-                return;
-            }
-
-            const profDoc = profSnap.docs[0];
-            const profData = profDoc.data();
-            currentProfId = profDoc.id;
-            currentProfName = profData.name;
-            schoolId = profData.schoolId;
-
-            console.log("✅ Professor:", profData.name, "| schoolId:", schoolId);
-
-            const schoolSnap = await getDoc(doc(db, "schools", schoolId));
-            const sData = schoolSnap.exists() ? schoolSnap.data() : {};
-            schoolCoords = { lat: sData.latitude || 0, lng: sData.longitude || 0 };
-
-            document.getElementById('viewSchoolNameProf').textContent = sData.schoolName || "SGH PRO";
-            document.getElementById('viewProfNameProf').textContent = profData.name;
-            if(sData.logoUrl) document.getElementById('schoolLogoDisplay').src = sData.logoUrl;
-
-            const gradesSnap = await getDocs(query(collection(db, "grades"), where("schoolId", "==", schoolId)));
-            const gradesMap = {}; gradesSnap.forEach(d => gradesMap[d.id] = d.data());
-
-            const subSnap = await getDocs(query(collection(db, "subjects"), where("schoolId", "==", schoolId)));
-            const subMap = {}; subSnap.forEach(d => subMap[d.id] = d.data());
-
-            const qSched = query(collection(db, "schedules"), where("teacherId", "==", currentProfId));
-            const schedSnap = await getDocs(qSched);
-            const myLessons = schedSnap.docs.map(d => d.data());
-            console.log("📅 Aulas:", myLessons.length);
-
-            const qFreq = query(collection(db, "attendance"), where("teacherId", "==", currentProfId), where("date", "==", new Date().toISOString().split('T')[0]));
-            const freqSnap = await getDocs(qFreq);
-            const checkins = freqSnap.docs.map(d => d.data());
-
-            const firstGradeConfig = gradesMap[profData.vinculos?.[0]?.grdId]
-                || Object.values(gradesMap)[0]
-                || { startTime: "07:15", lessonDuration: 50, intervalAfter: 3, intervalDuration: 15 };
-
-            renderDailyAgenda(myLessons, gradesMap, subMap, firstGradeConfig, checkins);
-            renderTablePremium(myLessons, subMap, firstGradeConfig);
-
-        } catch (e) {
-            console.error("❌ Erro:", e);
-            document.getElementById('timetableContent').innerHTML = `
-                <div style="padding: 30px; text-align: center; color: #ef4444;">
-                    <h3>❌ Erro ao carregar dados</h3>
-                    <p style="font-size:0.85rem; color:#64748b;">${e.message}</p>
-                </div>`;
-        }
+        localStorage.setItem('profEmail', user.email);
+        await carregarDadosProfessor(user.email);
     } else if (user === null) {
-        console.log("🚫 Sem sessão, redirecionando...");
-        window.location.assign('login.html');
+        // ✅ Tenta recuperar do localStorage antes de redirecionar
+        const profEmail = localStorage.getItem('profEmail');
+        if (profEmail) {
+            console.log("⚡ Firebase null, usando localStorage:", profEmail);
+            await carregarDadosProfessor(profEmail);
+        } else {
+            console.log("🚫 Sem sessão, redirecionando...");
+            window.location.assign('login.html');
+        }
     }
 });
+
+async function carregarDadosProfessor(emailB) {
+    document.querySelectorAll('.currentYear').forEach(el => el.textContent = new Date().getFullYear());
+    try {
+        emailB = emailB.toLowerCase().trim();
+        console.log("🔍 Buscando professor:", emailB);
+
+        const qProf = query(collection(db, "teachers"), where("email", "==", emailB));
+        const profSnap = await getDocs(qProf);
+        console.log("📋 Docs encontrados:", profSnap.size);
+
+        if (profSnap.empty) {
+            document.getElementById('timetableContent').innerHTML = `
+                <div style="padding: 30px; text-align: center; color: #ef4444;">
+                    <h3>⚠️ Professor não encontrado</h3>
+                    <p>Nenhum cadastro para o email:</p>
+                    <strong style="background:#fee2e2; padding:8px 16px; border-radius:8px; display:inline-block; margin-top:8px;">${emailB}</strong>
+                    <p style="margin-top:16px; color:#64748b; font-size:0.85rem;">
+                        Peça ao administrador para verificar se este email está cadastrado corretamente.
+                    </p>
+                </div>`;
+            document.getElementById('viewProfNameProf').textContent = "Não encontrado";
+            return;
+        }
+
+        const profDoc = profSnap.docs[0];
+        const profData = profDoc.data();
+        currentProfId = profDoc.id;
+        currentProfName = profData.name;
+        schoolId = profData.schoolId;
+
+        console.log("✅ Professor:", profData.name, "| schoolId:", schoolId);
+
+        const schoolSnap = await getDoc(doc(db, "schools", schoolId));
+        const sData = schoolSnap.exists() ? schoolSnap.data() : {};
+        schoolCoords = { lat: sData.latitude || 0, lng: sData.longitude || 0 };
+
+        document.getElementById('viewSchoolNameProf').textContent = sData.schoolName || "SGH PRO";
+        document.getElementById('viewProfNameProf').textContent = profData.name;
+        if(sData.logoUrl) document.getElementById('schoolLogoDisplay').src = sData.logoUrl;
+
+        const gradesSnap = await getDocs(query(collection(db, "grades"), where("schoolId", "==", schoolId)));
+        const gradesMap = {}; gradesSnap.forEach(d => gradesMap[d.id] = d.data());
+
+        const subSnap = await getDocs(query(collection(db, "subjects"), where("schoolId", "==", schoolId)));
+        const subMap = {}; subSnap.forEach(d => subMap[d.id] = d.data());
+
+        const qSched = query(collection(db, "schedules"), where("teacherId", "==", currentProfId));
+        const schedSnap = await getDocs(qSched);
+        const myLessons = schedSnap.docs.map(d => d.data());
+        console.log("📅 Aulas:", myLessons.length);
+
+        const qFreq = query(collection(db, "attendance"), where("teacherId", "==", currentProfId), where("date", "==", new Date().toISOString().split('T')[0]));
+        const freqSnap = await getDocs(qFreq);
+        const checkins = freqSnap.docs.map(d => d.data());
+
+        const firstGradeConfig = gradesMap[profData.vinculos?.[0]?.grdId]
+            || Object.values(gradesMap)[0]
+            || { startTime: "07:15", lessonDuration: 50, intervalAfter: 3, intervalDuration: 15 };
+
+        renderDailyAgenda(myLessons, gradesMap, subMap, firstGradeConfig, checkins);
+        renderTablePremium(myLessons, subMap, firstGradeConfig);
+
+    } catch (e) {
+        console.error("❌ Erro:", e);
+        document.getElementById('timetableContent').innerHTML = `
+            <div style="padding: 30px; text-align: center; color: #ef4444;">
+                <h3>❌ Erro ao carregar dados</h3>
+                <p style="font-size:0.85rem; color:#64748b;">${e.message}</p>
+            </div>`;
+    }
+}
 
 function renderDailyAgenda(lessons, gradesMap, subMap, config, checkins) {
     const container = document.getElementById('dailyAgendaScroll');
@@ -199,4 +209,9 @@ document.getElementById('btnDownloadPdf').onclick = () => {
     html2pdf().from(element).set(opt).save().then(() => { footer.style.display = 'none'; });
 };
 
-document.getElementById('btnLogoutProf').onclick = () => signOut(auth).then(() => window.location.assign('login.html'));
+document.getElementById('btnLogoutProf').onclick = () => {
+    localStorage.removeItem('profEmail');
+    localStorage.removeItem('profToken');
+    localStorage.removeItem('profUid');
+    signOut(auth).then(() => window.location.assign('login.html'));
+};
