@@ -5,7 +5,6 @@ import { getStorage } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-s
 
 const firebaseConfig = {
   apiKey: "AIzaSyARF0_xRnR9GxNrWGCcL3TzL0t_NypubOs",
-  // ✅ CORREÇÃO: usar o domínio do GitHub Pages como authDomain
   authDomain: "jerryglima.github.io",
   projectId: "sgh-escolar-pro",
   storageBucket: "sgh-escolar-pro.firebasestorage.app",
@@ -19,5 +18,5 @@ export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
 
-// ✅ Garante que a sessão persiste entre páginas
+// ✅ Garante que a sessão persiste entre páginas no GitHub Pages
 setPersistence(auth, browserLocalPersistence).catch(e => console.error("Erro persistência:", e));
