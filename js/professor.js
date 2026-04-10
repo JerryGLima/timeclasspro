@@ -9,15 +9,23 @@ let currentProfId = "";
 let schoolId = "";
 let currentProfName = "";
 
-// ✅ Aguarda até 8 segundos pela sessão antes de redirecionar para login
-// Necessário pois o GitHub Pages pode demorar para restaurar a sessão do Firebase
+// ✅ Verifica se veio de um login Google recente
+const acabouDeLogar = sessionStorage.getItem('googleLoginSuccess') === 'true';
+if (acabouDeLogar) {
+    sessionStorage.removeItem('googleLoginSuccess');
+    console.log("🔑 Veio de login Google recente, aguardando sessão...");
+}
+
+// ✅ Tempo de espera maior se veio de login recente
+const tempoEspera = acabouDeLogar ? 10000 : 5000;
 let authResolved = false;
+
 const redirectTimeout = setTimeout(() => {
     if (!authResolved) {
-        console.log("⏱️ Timeout: sessão não restaurada.");
+        console.log("⏱️ Timeout: redirecionando para login...");
         window.location.assign('login.html');
     }
-}, 8000);
+}, tempoEspera);
 
 onAuthStateChanged(auth, async (user) => {
     authResolved = true;
@@ -80,8 +88,8 @@ onAuthStateChanged(auth, async (user) => {
             const freqSnap = await getDocs(qFreq);
             const checkins = freqSnap.docs.map(d => d.data());
 
-            const firstGradeConfig = gradesMap[profData.vinculos?.[0]?.grdId] 
-                || Object.values(gradesMap)[0] 
+            const firstGradeConfig = gradesMap[profData.vinculos?.[0]?.grdId]
+                || Object.values(gradesMap)[0]
                 || { startTime: "07:15", lessonDuration: 50, intervalAfter: 3, intervalDuration: 15 };
 
             renderDailyAgenda(myLessons, gradesMap, subMap, firstGradeConfig, checkins);
@@ -142,16 +150,15 @@ window.doCheckin = async (gradeId, period) => {
         if (!schoolCoords.lat) return alert("GPS da escola não configurado.");
         const userLoc = await getCurrentLocation();
         const distance = calculateDistance(userLoc.lat, userLoc.lng, schoolCoords.lat, schoolCoords.lng);
-        if (distance > 200) return alert(`Você está a ${Math.round(distance)}m da escola. O ponto só pode ser batido nas dependências da instituição.`);
+        if (distance > 200) return alert(`Você está a ${Math.round(distance)}m da escola.`);
         const now = new Date();
         await addDoc(collection(db, "attendance"), {
             schoolId, gradeId, period, teacherId: currentProfId,
             date: now.toISOString().split('T')[0],
             time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            timestamp: now.toISOString(),
-            manual: false
+            timestamp: now.toISOString(), manual: false
         });
-        alert("Ponto registrado!"); 
+        alert("Ponto registrado!");
         location.reload();
     } catch (e) { alert(e.message); }
 };
