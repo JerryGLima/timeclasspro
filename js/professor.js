@@ -11,32 +11,30 @@ let currentProfName = "";
 onAuthStateChanged(auth, async (user) => {
     if (user && user.email) {
         document.querySelectorAll('.currentYear').forEach(el => el.textContent = new Date().getFullYear());
-        const timetableArea = document.getElementById('timetableContent');
-        
         try {
             const emailB = user.email.toLowerCase().trim();
-            console.log("✅ Usuário logado:", user.email);
 
-            // 1. BUSCA O PROFESSOR E VALIDA ACESSO
+            // ✅ DIAGNÓSTICO: mostra o email que está sendo buscado
+            console.log("✅ Usuário logado:", user.email);
+            console.log("🔍 Buscando professor com email:", emailB);
+
             const qProf = query(collection(db, "teachers"), where("email", "==", emailB));
             const profSnap = await getDocs(qProf);
 
+            console.log("📋 Documentos encontrados:", profSnap.size);
+
             if (profSnap.empty) {
-                // ⚠️ AVISO DE PROFESSOR NÃO CADASTRADO
-                timetableArea.innerHTML = `
-                    <div style="padding: 40px; text-align: center; background: white; border-radius: 20px; border: 1px solid #fee2e2; max-width: 500px; margin: 40px auto; box-shadow: 0 10px 15px rgba(0,0,0,0.05);">
-                        <div style="font-size: 3rem; margin-bottom: 20px;">🚫</div>
-                        <h3 style="color: #ef4444; margin-bottom: 10px; font-weight: 800;">Acesso Não Autorizado</h3>
-                        <p style="color: #64748b; margin-bottom: 20px;">O e-mail <strong>${emailB}</strong> não foi encontrado na lista de professores autorizados.</p>
-                        <div style="background: #f8fafc; padding: 15px; border-radius: 12px; font-size: 0.85rem; color: #475569; text-align: left; line-height: 1.5;">
-                            <strong>Como resolver?</strong><br>
-                            1. Verifique se logou com o e-mail correto.<br>
-                            2. Peça ao administrador para confirmar seu cadastro na escola.<br>
-                            3. Certifique-se de que não existem espaços extras no e-mail cadastrado.
-                        </div>
-                        <button onclick="auth.signOut().then(() => window.location.reload())" style="margin-top: 25px; background: #0f172a; color: white; border: none; padding: 12px 24px; border-radius: 12px; font-weight: 700; cursor: pointer;">Tentar outro e-mail</button>
+                // ✅ CORREÇÃO: mostra mensagem clara com o email buscado
+                document.getElementById('timetableContent').innerHTML = `
+                    <div style="padding: 30px; text-align: center; color: #ef4444;">
+                        <h3>⚠️ Professor não encontrado</h3>
+                        <p>Nenhum cadastro encontrado para o email:</p>
+                        <strong style="background:#fee2e2; padding:8px 16px; border-radius:8px; display:inline-block; margin-top:8px;">${emailB}</strong>
+                        <p style="margin-top:16px; color:#64748b; font-size:0.85rem;">
+                            Peça ao administrador para verificar se este email está cadastrado corretamente na seção de Professores.
+                        </p>
                     </div>`;
-                document.getElementById('viewProfNameProf').textContent = "Acesso Negado";
+                document.getElementById('viewProfNameProf').textContent = "Não encontrado";
                 return;
             }
             
@@ -46,57 +44,58 @@ onAuthStateChanged(auth, async (user) => {
             currentProfName = profData.name;
             schoolId = profData.schoolId;
 
-            // 2. CARREGAMENTO EM CASCATA (Garante autonomia sem o Admin aberto)
-            const [schoolSnap, gradesSnap, subjectsSnap] = await Promise.all([
-                getDoc(doc(db, "schools", schoolId)),
-                getDocs(query(collection(db, "grades"), where("schoolId", "==", schoolId))),
-                getDocs(query(collection(db, "subjects"), where("schoolId", "==", schoolId)))
-            ]);
+            console.log("✅ Professor encontrado:", profData.name, "| ID:", currentProfId, "| schoolId:", schoolId);
 
+            const schoolSnap = await getDoc(doc(db, "schools", schoolId));
             const sData = schoolSnap.exists() ? schoolSnap.data() : {};
             schoolCoords = { lat: sData.latitude || 0, lng: sData.longitude || 0 };
-            
-            const gradesMap = {}; gradesSnap.forEach(d => gradesMap[d.id] = d.data());
-            const subMap = {}; subjectsSnap.forEach(d => subMap[d.id] = d.data());
 
-            // Atualiza Interface Principal
             document.getElementById('viewSchoolNameProf').textContent = sData.schoolName || "SGH PRO";
-            document.getElementById('viewProfNameProf').textContent = currentProfName;
+            document.getElementById('viewProfNameProf').textContent = profData.name;
             if(sData.logoUrl) document.getElementById('schoolLogoDisplay').src = sData.logoUrl;
 
-            // 3. BUSCA AULAS E FREQUÊNCIA
+            const gradesSnap = await getDocs(query(collection(db, "grades"), where("schoolId", "==", schoolId)));
+            const gradesMap = {}; gradesSnap.forEach(d => gradesMap[d.id] = d.data());
+            const subSnap = await getDocs(query(collection(db, "subjects"), where("schoolId", "==", schoolId)));
+            const subMap = {}; subSnap.forEach(d => subMap[d.id] = d.data());
+
             const qSched = query(collection(db, "schedules"), where("teacherId", "==", currentProfId));
             const schedSnap = await getDocs(qSched);
             const myLessons = schedSnap.docs.map(d => d.data());
 
-            const today = new Date().toISOString().split('T')[0];
-            const qFreq = query(collection(db, "attendance"), where("teacherId", "==", currentProfId), where("date", "==", today));
+            console.log("📅 Aulas encontradas:", myLessons.length);
+
+            if (myLessons.length === 0) {
+                document.getElementById('timetableContent').innerHTML = `
+                    <div style="padding: 30px; text-align: center; color: #64748b;">
+                        <h3>📭 Nenhuma aula cadastrada</h3>
+                        <p>O administrador ainda não montou a grade para este professor.</p>
+                    </div>`;
+            }
+
+            const qFreq = query(collection(db, "attendance"), where("teacherId", "==", currentProfId), where("date", "==", new Date().toISOString().split('T')[0]));
             const freqSnap = await getDocs(qFreq);
             const checkins = freqSnap.docs.map(d => d.data());
 
-            if (myLessons.length === 0) {
-                timetableArea.innerHTML = `<div style="padding: 30px; text-align: center; color: #64748b;"><h3>📭 Nenhuma aula vinculada ao seu perfil.</h3></div>`;
-                return;
-            }
+            const firstGradeConfig = gradesMap[profData.vinculos?.[0]?.grdId] || Object.values(gradesMap)[0] || { startTime: "07:15", lessonDuration: 50, intervalAfter: 3, intervalDuration: 15 };
 
-            // Define a configuração de horário (Pega a primeira turma do prof ou a primeira da escola)
-            const firstGradeId = profData.vinculos?.[0]?.grdId || Object.keys(gradesMap)[0];
-            const config = gradesMap[firstGradeId] || { startTime: "07:15", lessonDuration: 50, intervalAfter: 3, intervalDuration: 15 };
-
-            // 4. RENDERIZAÇÃO
-            renderDailyAgenda(myLessons, gradesMap, subMap, config, checkins);
-            renderTablePremium(myLessons, subMap, config);
+            renderDailyAgenda(myLessons, gradesMap, subMap, firstGradeConfig, checkins);
+            renderTablePremium(myLessons, subMap, firstGradeConfig);
 
         } catch (e) {
-            console.error("❌ Erro:", e);
-            timetableArea.innerHTML = `<div style="padding: 30px; text-align: center; color: #ef4444;"><h3>Erro de Conexão</h3><p>${e.message}</p></div>`;
+            // ✅ CORREÇÃO: erro agora aparece na tela em vez de sumir em silêncio
+            console.error("❌ Erro ao carregar dados do professor:", e);
+            document.getElementById('timetableContent').innerHTML = `
+                <div style="padding: 30px; text-align: center; color: #ef4444;">
+                    <h3>❌ Erro ao carregar dados</h3>
+                    <p style="font-size:0.85rem; color:#64748b;">${e.message}</p>
+                    <p style="margin-top:12px; font-size:0.8rem; color:#94a3b8;">Verifique as permissões do Firestore ou contate o suporte.</p>
+                </div>`;
         }
     } else if (user === null) {
         window.location.assign('login.html');
     }
 });
-
-// --- FUNÇÕES DE RENDERIZAÇÃO (Mantidas conforme seu original funcional) ---
 
 function renderDailyAgenda(lessons, gradesMap, subMap, config, checkins) {
     const container = document.getElementById('dailyAgendaScroll');
@@ -132,6 +131,18 @@ function renderDailyAgenda(lessons, gradesMap, subMap, config, checkins) {
     container.innerHTML = html || "<p>Nenhuma aula hoje.</p>";
 }
 
+window.doCheckin = async (gradeId, period) => {
+    try {
+        if (!schoolCoords.lat) return alert("GPS da escola não configurado.");
+        const userLoc = await getCurrentLocation();
+        const distance = calculateDistance(userLoc.lat, userLoc.lng, schoolCoords.lat, schoolCoords.lng);
+        if (distance > 200) return alert(`Você está fora da escola.`);
+        const now = new Date();
+        await addDoc(collection(db, "attendance"), { schoolId, gradeId, period, teacherId: currentProfId, date: now.toISOString().split('T')[0], time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), timestamp: now.toISOString(), manual: false });
+        location.reload();
+    } catch (e) { alert(e.message); }
+};
+
 function renderTablePremium(lessons, subMap, config) {
     const area = document.getElementById('timetableContent');
     const days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'];
@@ -154,30 +165,33 @@ function renderTablePremium(lessons, subMap, config) {
     area.innerHTML = html;
 }
 
-window.doCheckin = async (gradeId, period) => {
-    try {
-        if (!schoolCoords.lat) return alert("GPS da escola não configurado.");
-        const userLoc = await getCurrentLocation();
-        const distance = calculateDistance(userLoc.lat, userLoc.lng, schoolCoords.lat, schoolCoords.lng);
-        if (distance > 200) return alert(`Você está fora da escola.`);
-        const now = new Date();
-        await addDoc(collection(db, "attendance"), { schoolId, gradeId, period, teacherId: currentProfId, date: now.toISOString().split('T')[0], time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), timestamp: now.toISOString(), manual: false });
-        location.reload();
-    } catch (e) { alert(e.message); }
-};
-
+// --- FUNÇÃO DE DOWNLOAD CORRIGIDA PARA PAISAGEM ---
 document.getElementById('btnDownloadPdf').onclick = () => {
     const element = document.getElementById('printArea');
     const footer = document.getElementById('pdfFooterProf');
+    
     footer.style.display = 'block';
+
     const opt = {
         margin: [5, 5, 5, 5],
         filename: `Horario_${currentProfName}.pdf`,
         image: { type: 'jpeg', quality: 1 },
-        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
+        html2canvas: { 
+            scale: 2, 
+            useCORS: true, 
+            backgroundColor: '#ffffff',
+            letterRendering: true
+        },
+        jsPDF: { 
+            unit: 'mm', 
+            format: 'a4', 
+            orientation: 'landscape'
+        }
     };
-    html2pdf().from(element).set(opt).save().then(() => { footer.style.display = 'none'; });
+
+    html2pdf().from(element).set(opt).save().then(() => {
+        footer.style.display = 'none';
+    });
 };
 
 document.getElementById('btnLogoutProf').onclick = () => signOut(auth).then(() => window.location.assign('login.html'));
