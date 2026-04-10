@@ -20,13 +20,10 @@ const errorEl = document.getElementById('errorMessage');
 // --- 1. TROCA DE ABAS (ADMIN / PROFESSOR) ---
 if (tabAdmin && tabProfessor) {
     tabAdmin.onclick = () => {
-        // Estilo das abas
         tabAdmin.classList.add('active'); 
         tabProfessor.classList.remove('active');
-        // Visibilidade dos formulários
         adminForm.classList.remove('hidden'); 
         profArea.classList.add('hidden');
-        // Limpar erros ao trocar
         if(errorEl) errorEl.textContent = "";
     };
 
@@ -50,11 +47,7 @@ if (toggleBtn) {
     toggleBtn.onclick = (e) => {
         e.preventDefault();
         isRegisterMode = !isRegisterMode;
-        
-        // Exibe/Esconde campo de Nome da Escola
         if(registerFields) registerFields.classList.toggle('hidden');
-        
-        // Altera textos da tela
         btnSubmitAdmin.textContent = isRegisterMode ? "Criar Minha Escola" : "Entrar no Painel";
         authText.textContent = isRegisterMode ? "Já tem conta?" : "Ainda não tem conta?";
         toggleBtn.textContent = isRegisterMode ? "Fazer Login" : "Criar conta para minha escola";
@@ -71,43 +64,31 @@ if (adminForm) {
 
         try {
             if (isRegisterMode) {
-                // --- MODO CADASTRO ---
                 const schoolName = document.getElementById('schoolName').value;
                 if (!schoolName) {
                     errorEl.textContent = "Por favor, digite o nome da escola.";
                     return;
                 }
-
                 const userCred = await createUserWithEmailAndPassword(auth, email, password);
                 const user = userCred.user;
-
-                // Cria o documento da escola no Firestore vinculado ao UID do Admin
                 await setDoc(doc(db, "schools", user.uid), {
                     schoolName: schoolName,
                     adminEmail: email,
-                    intervalAfter: 4, // Configuração padrão inicial
+                    intervalAfter: 4,
                     createdAt: new Date().toISOString()
                 });
-
-                // Atualiza o perfil do usuário com o nome da escola
                 await updateProfile(user, { displayName: schoolName });
-                
                 alert("Escola cadastrada com sucesso! Bem-vindo ao painel.");
             } else {
-                // --- MODO LOGIN ---
                 await signInWithEmailAndPassword(auth, email, password);
             }
-            
-            // Redireciona para o Admin
             window.location.assign('admin.html');
 
         } catch (error) {
             console.error("Erro Auth:", error.code);
-            
-            // Tratamento de erros comuns para o usuário
             switch (error.code) {
                 case 'auth/invalid-credential':
-                    errorEl.textContent = "E-mail ou senha incorretos. Se você nunca acessou como admin, crie uma conta para sua escola.";
+                    errorEl.textContent = "E-mail ou senha incorretos.";
                     break;
                 case 'auth/email-already-in-use':
                     errorEl.textContent = "Este e-mail já está sendo usado por outra escola.";
@@ -116,7 +97,7 @@ if (adminForm) {
                     errorEl.textContent = "A senha deve ter pelo menos 6 caracteres.";
                     break;
                 case 'auth/user-not-found':
-                    errorEl.textContent = "Usuário não encontrado. Verifique os dados ou crie uma conta.";
+                    errorEl.textContent = "Usuário não encontrado.";
                     break;
                 default:
                     errorEl.textContent = "Erro ao acessar: " + error.message;
@@ -131,44 +112,43 @@ if (googleBtn) {
     googleBtn.onclick = async () => {
         try {
             console.log("Iniciando Login Google...");
-            await signInWithPopup(auth, googleProvider);
-            // Redireciona para o painel do professor
+            googleProvider.setCustomParameters({ prompt: 'select_account' });
+            const result = await signInWithPopup(auth, googleProvider);
+            console.log("✅ Login Google OK:", result.user.email);
+            // ✅ Redireciona diretamente após login bem-sucedido
             window.location.assign('professor.html');
         } catch (error) {
             console.error("Erro Google:", error);
             if (error.code === 'auth/popup-blocked') {
                 alert("O navegador bloqueou o login. Por favor, ative os pop-ups para este site.");
-            } else {
-                errorEl.textContent = "Erro ao entrar com Google: " + error.message;
+            } else if (error.code !== 'auth/popup-closed-by-user') {
+                if(errorEl) errorEl.textContent = "Erro ao entrar com Google: " + error.message;
             }
         }
     };
 }
 
-// --- 5. MONITOR DE SESSÃO (REDIRECIONAMENTO AUTOMÁTICO) ---
+// --- 5. MONITOR DE SESSÃO ---
 onAuthStateChanged(auth, (user) => {
     const path = window.location.pathname;
 
+    // ✅ CORREÇÃO PRINCIPAL: só age na página de login/index
+    // professor.html e admin.html cuidam da própria autenticação
+    if (!path.includes('login.html') && !path.endsWith('/') && !path.includes('index.html')) {
+        return;
+    }
+
     if (user) {
-        // Se o usuário já está logado e está na tela de login ou index, manda para o painel
-        if (path.includes('login.html') || path.endsWith('/') || path.includes('index.html')) {
-            // Se o login foi via Google, mandamos para o painel do Professor
-            const isGoogle = user.providerData.some(p => p.providerId === 'google.com');
-            if (isGoogle) {
-                window.location.assign('professor.html');
-            } else {
-                window.location.assign('admin.html');
-            }
-        }
-    } else {
-        // Se NÃO está logado e tenta acessar páginas restritas, manda para o login
-        if (path.includes('admin.html') || path.includes('professor.html')) {
-            window.location.assign('login.html');
+        const isGoogle = user.providerData.some(p => p.providerId === 'google.com');
+        if (isGoogle) {
+            window.location.assign('professor.html');
+        } else {
+            window.location.assign('admin.html');
         }
     }
 });
 
-// --- 6. FUNÇÃO DE LOGOUT (Disponível para os botões "Sair") ---
+// --- 6. FUNÇÃO DE LOGOUT ---
 window.logoutUser = () => {
     signOut(auth).then(() => {
         window.location.assign('login.html');
