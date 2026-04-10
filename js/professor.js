@@ -6,45 +6,20 @@ import { calculateTimeSlots, getCurrentLocation, calculateDistance } from './uti
 let schoolCoords = { lat: 0, lng: 0 };
 let currentProfId = "";
 let schoolId = "";
-let currentProfName = "";
 
 onAuthStateChanged(auth, async (user) => {
     if (user && user.email) {
         document.querySelectorAll('.currentYear').forEach(el => el.textContent = new Date().getFullYear());
         try {
             const emailB = user.email.toLowerCase().trim();
-
-            // ✅ DIAGNÓSTICO: mostra o email que está sendo buscado
-            console.log("✅ Usuário logado:", user.email);
-            console.log("🔍 Buscando professor com email:", emailB);
-
             const qProf = query(collection(db, "teachers"), where("email", "==", emailB));
             const profSnap = await getDocs(qProf);
-
-            console.log("📋 Documentos encontrados:", profSnap.size);
-
-            if (profSnap.empty) {
-                // ✅ CORREÇÃO: mostra mensagem clara com o email buscado
-                document.getElementById('timetableContent').innerHTML = `
-                    <div style="padding: 30px; text-align: center; color: #ef4444;">
-                        <h3>⚠️ Professor não encontrado</h3>
-                        <p>Nenhum cadastro encontrado para o email:</p>
-                        <strong style="background:#fee2e2; padding:8px 16px; border-radius:8px; display:inline-block; margin-top:8px;">${emailB}</strong>
-                        <p style="margin-top:16px; color:#64748b; font-size:0.85rem;">
-                            Peça ao administrador para verificar se este email está cadastrado corretamente na seção de Professores.
-                        </p>
-                    </div>`;
-                document.getElementById('viewProfNameProf').textContent = "Não encontrado";
-                return;
-            }
+            if (profSnap.empty) { document.getElementById('timetableContent').innerHTML = "<h3>Cadastro não localizado.</h3>"; return; }
             
             const profDoc = profSnap.docs[0];
             const profData = profDoc.data();
             currentProfId = profDoc.id;
-            currentProfName = profData.name;
             schoolId = profData.schoolId;
-
-            console.log("✅ Professor encontrado:", profData.name, "| ID:", currentProfId, "| schoolId:", schoolId);
 
             const schoolSnap = await getDoc(doc(db, "schools", schoolId));
             const sData = schoolSnap.exists() ? schoolSnap.data() : {};
@@ -59,51 +34,28 @@ onAuthStateChanged(auth, async (user) => {
             const subSnap = await getDocs(query(collection(db, "subjects"), where("schoolId", "==", schoolId)));
             const subMap = {}; subSnap.forEach(d => subMap[d.id] = d.data());
 
-            const qSched = query(collection(db, "schedules"), where("teacherId", "==", currentProfId));
+            const qSched = query(collection(db, "schedules"), where("teacherId", "==", profDoc.id));
             const schedSnap = await getDocs(qSched);
             const myLessons = schedSnap.docs.map(d => d.data());
 
-            console.log("📅 Aulas encontradas:", myLessons.length);
-
-            if (myLessons.length === 0) {
-                document.getElementById('timetableContent').innerHTML = `
-                    <div style="padding: 30px; text-align: center; color: #64748b;">
-                        <h3>📭 Nenhuma aula cadastrada</h3>
-                        <p>O administrador ainda não montou a grade para este professor.</p>
-                    </div>`;
-            }
-
-            const qFreq = query(collection(db, "attendance"), where("teacherId", "==", currentProfId), where("date", "==", new Date().toISOString().split('T')[0]));
+            const qFreq = query(collection(db, "attendance"), where("teacherId", "==", profDoc.id), where("date", "==", new Date().toISOString().split('T')[0]));
             const freqSnap = await getDocs(qFreq);
             const checkins = freqSnap.docs.map(d => d.data());
 
-            const firstGradeConfig = gradesMap[profData.vinculos?.[0]?.grdId] || Object.values(gradesMap)[0] || { startTime: "07:15", lessonDuration: 50, intervalAfter: 3, intervalDuration: 15 };
-
-            renderDailyAgenda(myLessons, gradesMap, subMap, firstGradeConfig, checkins);
-            renderTablePremium(myLessons, subMap, firstGradeConfig);
-
-        } catch (e) {
-            // ✅ CORREÇÃO: erro agora aparece na tela em vez de sumir em silêncio
-            console.error("❌ Erro ao carregar dados do professor:", e);
-            document.getElementById('timetableContent').innerHTML = `
-                <div style="padding: 30px; text-align: center; color: #ef4444;">
-                    <h3>❌ Erro ao carregar dados</h3>
-                    <p style="font-size:0.85rem; color:#64748b;">${e.message}</p>
-                    <p style="margin-top:12px; font-size:0.8rem; color:#94a3b8;">Verifique as permissões do Firestore ou contate o suporte.</p>
-                </div>`;
-        }
-    } else if (user === null) {
-        window.location.assign('login.html');
-    }
+            renderDailyAgenda(myLessons, gradesMap, subMap, gradesMap[profData.vinculos[0]?.grdId], checkins);
+            renderTablePremiumA4(myLessons, subMap, gradesMap[profData.vinculos[0]?.grdId]);
+        } catch (e) { console.error(e); }
+    } else if (user === null) window.location.assign('login.html');
 });
 
 function renderDailyAgenda(lessons, gradesMap, subMap, config, checkins) {
     const container = document.getElementById('dailyAgendaScroll');
+    const label = document.getElementById('todayLabel');
     const now = new Date();
     const days = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
     const today = days[now.getDay()];
     const currentMins = now.getHours() * 60 + now.getMinutes();
-    document.getElementById('todayLabel').textContent = today;
+    label.textContent = today;
     if(now.getDay() === 0 || now.getDay() === 6) { container.innerHTML = "<p>Final de semana!</p>"; return; }
     
     const times = calculateTimeSlots(config.startTime, config.lessonDuration, 7, config.intervalAfter, config.intervalDuration);
@@ -116,10 +68,12 @@ function renderDailyAgenda(lessons, gradesMap, subMap, config, checkins) {
         let pE = pS + config.lessonDuration;
         const isNow = (currentMins >= pS && currentMins < pE);
         const aula = lessons.find(l => l.day === today && l.period == i);
+        
         if(aula) {
             const s = subMap[aula.subjectId] || {name:'Aula', color:'#6366f1'};
             const g = gradesMap[aula.gradeId] || {name:'Turma'};
             const jaFezCheckin = checkins.some(c => c.gradeId === aula.gradeId && c.period === i);
+
             html += `
                 <div class="agenda-card ${isNow ? 'active' : ''}" style="border-left: 5px solid ${s.color}; background: ${jaFezCheckin ? '#f0fdf4' : 'white'}">
                     <small>${times[i-1]}</small><strong>${g.name}</strong><span>${s.name}</span>
@@ -133,17 +87,17 @@ function renderDailyAgenda(lessons, gradesMap, subMap, config, checkins) {
 
 window.doCheckin = async (gradeId, period) => {
     try {
-        if (!schoolCoords.lat) return alert("GPS da escola não configurado.");
+        if (!schoolCoords.lat) return alert("Erro: GPS da escola não configurado.");
         const userLoc = await getCurrentLocation();
         const distance = calculateDistance(userLoc.lat, userLoc.lng, schoolCoords.lat, schoolCoords.lng);
-        if (distance > 200) return alert(`Você está fora da escola.`);
+        if (distance > 200) return alert(`Ops! Você está a ${Math.round(distance)}m da escola. O ponto só pode ser batido nas dependências da instituição.`);
         const now = new Date();
         await addDoc(collection(db, "attendance"), { schoolId, gradeId, period, teacherId: currentProfId, date: now.toISOString().split('T')[0], time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), timestamp: now.toISOString(), manual: false });
-        location.reload();
+        alert("Ponto registrado!"); location.reload();
     } catch (e) { alert(e.message); }
 };
 
-function renderTablePremium(lessons, subMap, config) {
+function renderTablePremiumA4(lessons, subMap, config) {
     const area = document.getElementById('timetableContent');
     const days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'];
     const times = calculateTimeSlots(config.startTime, config.lessonDuration, 7, config.intervalAfter, config.intervalDuration);
@@ -164,34 +118,4 @@ function renderTablePremium(lessons, subMap, config) {
     html += `</tbody></table>`;
     area.innerHTML = html;
 }
-
-// --- FUNÇÃO DE DOWNLOAD CORRIGIDA PARA PAISAGEM ---
-document.getElementById('btnDownloadPdf').onclick = () => {
-    const element = document.getElementById('printArea');
-    const footer = document.getElementById('pdfFooterProf');
-    
-    footer.style.display = 'block';
-
-    const opt = {
-        margin: [5, 5, 5, 5],
-        filename: `Horario_${currentProfName}.pdf`,
-        image: { type: 'jpeg', quality: 1 },
-        html2canvas: { 
-            scale: 2, 
-            useCORS: true, 
-            backgroundColor: '#ffffff',
-            letterRendering: true
-        },
-        jsPDF: { 
-            unit: 'mm', 
-            format: 'a4', 
-            orientation: 'landscape'
-        }
-    };
-
-    html2pdf().from(element).set(opt).save().then(() => {
-        footer.style.display = 'none';
-    });
-};
-
 document.getElementById('btnLogoutProf').onclick = () => signOut(auth).then(() => window.location.assign('login.html'));
