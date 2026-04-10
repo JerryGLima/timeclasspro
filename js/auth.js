@@ -96,9 +96,15 @@ if (googleBtn) {
             console.log("Iniciando Login Google...");
             googleProvider.setCustomParameters({ prompt: 'select_account' });
             const result = await signInWithPopup(auth, googleProvider);
-            console.log("✅ Login Google OK:", result.user.email);
-            // ✅ Salva flag no sessionStorage para professor.js saber que acabou de logar
-            sessionStorage.setItem('googleLoginSuccess', 'true');
+            const user = result.user;
+            console.log("✅ Login Google OK:", user.email);
+
+            // ✅ Salva o token de acesso no localStorage para o professor.js usar
+            const token = await user.getIdToken();
+            localStorage.setItem('profToken', token);
+            localStorage.setItem('profEmail', user.email);
+            localStorage.setItem('profUid', user.uid);
+
             window.location.assign('professor.html');
         } catch (error) {
             console.error("Erro Google:", error);
@@ -132,5 +138,10 @@ onAuthStateChanged(auth, (user) => {
 
 // --- 6. LOGOUT ---
 window.logoutUser = () => {
-    signOut(auth).then(() => window.location.assign('login.html'));
+    signOut(auth).then(() => {
+        localStorage.removeItem('profToken');
+        localStorage.removeItem('profEmail');
+        localStorage.removeItem('profUid');
+        window.location.assign('login.html');
+    });
 };
