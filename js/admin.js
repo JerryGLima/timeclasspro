@@ -352,10 +352,51 @@ window.removeTemp = (i) => { window.tempVinculos.splice(i, 1); renderTemp(); };
 document.getElementById('btnSaveFullProf').onclick = async () => {
     const id = document.getElementById('editProfId').value;
     const rest = []; document.querySelectorAll('.dia-folga:checked').forEach(c => rest.push(c.value));
-    const payload = { name: document.getElementById('profName').value, email: document.getElementById('profEmail').value.toLowerCase().trim(), schoolId, vinculos: window.tempVinculos, restricoes: rest };
-    if(id) await setDoc(doc(db, "teachers", id), payload);
-    else await addDoc(collection(db, "teachers"), payload);
+    const email = document.getElementById('profEmail').value.toLowerCase().trim();
+    const password = document.getElementById('profPassword') ? document.getElementById('profPassword').value : "";
+    const payload = { name: document.getElementById('profName').value, email, schoolId, vinculos: window.tempVinculos, restricoes: rest };
+
+    if (id) {
+        // ✅ Editando professor existente — apenas atualiza Firestore
+        await setDoc(doc(db, "teachers", id), payload);
+        alert("✅ Professor atualizado com sucesso!");
+    } else {
+        // ✅ Novo professor — cria no Authentication E no Firestore
+        if (!password || password.length < 6) {
+            alert("⚠️ Defina uma senha de pelo menos 6 caracteres para o professor.");
+            return;
+        }
+        try {
+            const { createUserWithEmailAndPassword } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js");
+            await createUserWithEmailAndPassword(auth, email, password);
+            await addDoc(collection(db, "teachers"), payload);
+            alert(`✅ Professor cadastrado com sucesso!\n\nCredenciais de acesso:\nEmail: ${email}\nSenha: ${password}\n\nGuarde essas informações para repassar ao professor.`);
+        } catch(e) {
+            if (e.code === 'auth/email-already-in-use') {
+                // Email já existe no Auth — salva só no Firestore
+                await addDoc(collection(db, "teachers"), payload);
+                alert("✅ Professor salvo! (Conta de acesso já existia para este email)");
+            } else {
+                alert("Erro ao criar acesso: " + e.message);
+                return;
+            }
+        }
+    }
     location.reload();
+};
+
+// ✅ Redefinir senha de professor já cadastrado
+window.redefinirSenha = async (email, name) => {
+    const novaSenha = prompt(`Digite a nova senha para ${name} (${email}):\n(mínimo 6 caracteres)`);
+    if (!novaSenha) return;
+    if (novaSenha.length < 6) { alert("A senha deve ter pelo menos 6 caracteres!"); return; }
+    try {
+        const { sendPasswordResetEmail } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js");
+        await sendPasswordResetEmail(auth, email);
+        alert(`✅ Email de redefinição de senha enviado para ${email}!\n\nO professor deve verificar a caixa de entrada.`);
+    } catch(e) {
+        alert("Erro: " + e.message);
+    }
 };
 
 // --- CARREGAMENTO GERAL ---
@@ -414,7 +455,15 @@ async function loadAllData() {
                     const mats = data.vinculos ? data.vinculos.map(v => v.subName).join(', ') : '-';
                     htmlItem += `<strong>${data.name}</strong> <span style="font-size:0.7rem; background:#e0e7ff; padding:2px 6px; border-radius:4px; margin-left:8px">${workload[data.id] || 0} aulas</span><br><small>${mats}</small>`;
                 }
-                htmlItem += `</div><div><button class="btn-edit" onclick="window.prepareEdit${col === 'subjects' ? 'Subject' : (col === 'grades' ? 'Grade' : 'Professor')}('${data.id}')">Editar</button><button class="btn-delete" onclick="window.del('${col}', '${data.id}')">Excluir</button></div></li>`;
+                if (col === 'teachers') {
+                    htmlItem += `</div><div style="display:flex; gap:5px; flex-wrap:wrap;">
+                        <button class="btn-edit" onclick="window.prepareEditProfessor('${data.id}')">Editar</button>
+                        <button style="background:#dcfce7; color:#16a34a; border:none; padding:6px 12px; border-radius:8px; cursor:pointer; font-size:0.75rem; font-weight:700;" onclick="window.redefinirSenha('${data.email}', '${data.name}')">🔑 Redefinir Senha</button>
+                        <button class="btn-delete" onclick="window.del('${col}', '${data.id}')">Excluir</button>
+                    </div></li>`;
+                } else {
+                    htmlItem += `</div><div><button class="btn-edit" onclick="window.prepareEdit${col === 'subjects' ? 'Subject' : 'Grade'}('${data.id}')">Editar</button><button class="btn-delete" onclick="window.del('${col}', '${data.id}')">Excluir</button></div></li>`;
+                }
                 list.innerHTML += htmlItem;
             });
         }
