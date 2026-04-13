@@ -14,6 +14,16 @@ let monitorMode = "now";
 // --- INICIALIZAÇÃO SaaS ---
 onAuthStateChanged(auth, async (user) => {
     if (user) {
+        // ✅ CORREÇÃO: verifica se o usuário é realmente um admin (existe na coleção schools)
+        const schoolSnap = await getDoc(doc(db, "schools", user.uid));
+        if (!schoolSnap.exists()) {
+            // Não é admin — é professor tentando acessar o painel
+            console.warn("Acesso negado: usuário não é administrador.");
+            await signOut(auth);
+            window.location.assign('login.html');
+            return;
+        }
+
         schoolId = user.uid;
         initNavigation();
         await loadSchoolInfo(); 
@@ -342,49 +352,10 @@ window.removeTemp = (i) => { window.tempVinculos.splice(i, 1); renderTemp(); };
 document.getElementById('btnSaveFullProf').onclick = async () => {
     const id = document.getElementById('editProfId').value;
     const rest = []; document.querySelectorAll('.dia-folga:checked').forEach(c => rest.push(c.value));
-    const email = document.getElementById('profEmail').value.toLowerCase().trim();
-    const password = document.getElementById('profPassword').value;
-    const payload = { name: document.getElementById('profName').value, email, schoolId, vinculos: window.tempVinculos, restricoes: rest };
-    
-    if(id) {
-        await setDoc(doc(db, "teachers", id), payload);
-    } else {
-        if (!password || password.length < 6) {
-            alert("⚠️ Defina uma senha de pelo menos 6 caracteres para o professor.");
-            return;
-        }
-        // Cria conta no Firebase Auth
-        try {
-            const { createUserWithEmailAndPassword: createUser } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js");
-            await createUser(auth, email, password);
-        } catch(e) {
-            if (e.code !== 'auth/email-already-in-use') {
-                alert("Erro ao criar acesso: " + e.message);
-                return;
-            }
-        }
-        await addDoc(collection(db, "teachers"), payload);
-    }
+    const payload = { name: document.getElementById('profName').value, email: document.getElementById('profEmail').value.toLowerCase().trim(), schoolId, vinculos: window.tempVinculos, restricoes: rest };
+    if(id) await setDoc(doc(db, "teachers", id), payload);
+    else await addDoc(collection(db, "teachers"), payload);
     location.reload();
-};
-
-// ✅ Criar/resetar acesso para professor já cadastrado
-window.criarAcessoProfessor = async (id, email, name) => {
-    const senha = prompt(`Defina uma senha para ${name} (${email}):\n(mínimo 6 caracteres)`);
-    if (!senha) return;
-    if (senha.length < 6) { alert("A senha deve ter pelo menos 6 caracteres!"); return; }
-    
-    try {
-        const { createUserWithEmailAndPassword: createUser } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js");
-        await createUser(auth, email, senha);
-        alert(`✅ Acesso criado com sucesso para ${name}!\n\nEmail: ${email}\nSenha: ${senha}\n\nPasse essas informações para o professor.`);
-    } catch(e) {
-        if (e.code === 'auth/email-already-in-use') {
-            alert(`⚠️ Este professor já tem acesso criado!\n\nSe precisar redefinir a senha, acesse o Firebase Console → Authentication.`);
-        } else {
-            alert("Erro: " + e.message);
-        }
-    }
 };
 
 // --- CARREGAMENTO GERAL ---
@@ -443,15 +414,7 @@ async function loadAllData() {
                     const mats = data.vinculos ? data.vinculos.map(v => v.subName).join(', ') : '-';
                     htmlItem += `<strong>${data.name}</strong> <span style="font-size:0.7rem; background:#e0e7ff; padding:2px 6px; border-radius:4px; margin-left:8px">${workload[data.id] || 0} aulas</span><br><small>${mats}</small>`;
                 }
-                if (col === 'teachers') {
-                    htmlItem += `</div><div style="display:flex; gap:5px; flex-wrap:wrap;">
-                        <button class="btn-edit" onclick="window.prepareEditProfessor('${data.id}')">Editar</button>
-                        <button style="background:#dcfce7; color:#16a34a; border:none; padding:6px 12px; border-radius:8px; cursor:pointer; font-size:0.75rem; font-weight:700;" onclick="window.criarAcessoProfessor('${data.id}', '${data.email}', '${data.name}')">🔑 Criar Acesso</button>
-                        <button class="btn-delete" onclick="window.del('${col}', '${data.id}')">Excluir</button>
-                    </div></li>`;
-                } else {
-                    htmlItem += `</div><div><button class="btn-edit" onclick="window.prepareEdit${col === 'subjects' ? 'Subject' : 'Grade'}('${data.id}')">Editar</button><button class="btn-delete" onclick="window.del('${col}', '${data.id}')">Excluir</button></div></li>`;
-                }
+                htmlItem += `</div><div><button class="btn-edit" onclick="window.prepareEdit${col === 'subjects' ? 'Subject' : (col === 'grades' ? 'Grade' : 'Professor')}('${data.id}')">Editar</button><button class="btn-delete" onclick="window.del('${col}', '${data.id}')">Excluir</button></div></li>`;
                 list.innerHTML += htmlItem;
             });
         }
