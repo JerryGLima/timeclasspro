@@ -1,9 +1,8 @@
 // js/auth.js
-import { auth, db, googleProvider } from './firebase-config.js';
+import { auth, db } from './firebase-config.js';
 import { 
     signInWithEmailAndPassword, 
     createUserWithEmailAndPassword,
-    signInWithPopup,
     onAuthStateChanged,
     updateProfile,
     signOut
@@ -14,7 +13,7 @@ import { doc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-
 const tabAdmin = document.getElementById('tabAdmin');
 const tabProfessor = document.getElementById('tabProfessor');
 const adminForm = document.getElementById('adminLoginForm');
-const profArea = document.getElementById('professorLoginArea');
+const profForm = document.getElementById('professorLoginForm');
 const errorEl = document.getElementById('errorMessage');
 
 // --- 1. TROCA DE ABAS ---
@@ -23,13 +22,13 @@ if (tabAdmin && tabProfessor) {
         tabAdmin.classList.add('active'); 
         tabProfessor.classList.remove('active');
         adminForm.classList.remove('hidden'); 
-        profArea.classList.add('hidden');
+        profForm.classList.add('hidden');
         if(errorEl) errorEl.textContent = "";
     };
     tabProfessor.onclick = () => {
         tabProfessor.classList.add('active'); 
         tabAdmin.classList.remove('active');
-        profArea.classList.remove('hidden'); 
+        profForm.classList.remove('hidden'); 
         adminForm.classList.add('hidden');
         if(errorEl) errorEl.textContent = "";
     };
@@ -88,30 +87,21 @@ if (adminForm) {
     };
 }
 
-// --- 4. LOGIN PROFESSOR (GOOGLE) ---
-const googleBtn = document.getElementById('googleLoginBtn');
-if (googleBtn) {
-    googleBtn.onclick = async () => {
+// --- 4. FORMULÁRIO PROFESSOR (EMAIL E SENHA) ---
+if (profForm) {
+    profForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('profEmail').value;
+        const password = document.getElementById('profPassword').value;
         try {
-            console.log("Iniciando Login Google...");
-            googleProvider.setCustomParameters({ prompt: 'select_account' });
-            const result = await signInWithPopup(auth, googleProvider);
-            const user = result.user;
-            console.log("✅ Login Google OK:", user.email);
-
-            // ✅ Salva o token de acesso no localStorage para o professor.js usar
-            const token = await user.getIdToken();
-            localStorage.setItem('profToken', token);
-            localStorage.setItem('profEmail', user.email);
-            localStorage.setItem('profUid', user.uid);
-
+            await signInWithEmailAndPassword(auth, email, password);
             window.location.assign('professor.html');
         } catch (error) {
-            console.error("Erro Google:", error);
-            if (error.code === 'auth/popup-blocked') {
-                alert("O navegador bloqueou o login. Por favor, ative os pop-ups para este site.");
-            } else if (error.code !== 'auth/popup-closed-by-user') {
-                if(errorEl) errorEl.textContent = "Erro ao entrar com Google: " + error.message;
+            console.error("Erro Prof:", error.code);
+            switch (error.code) {
+                case 'auth/invalid-credential': errorEl.textContent = "E-mail ou senha incorretos."; break;
+                case 'auth/user-not-found': errorEl.textContent = "Professor não encontrado."; break;
+                default: errorEl.textContent = "Erro ao entrar: " + error.message;
             }
         }
     };
@@ -121,7 +111,6 @@ if (googleBtn) {
 onAuthStateChanged(auth, (user) => {
     const path = window.location.pathname;
 
-    // ✅ Só age na página de login/index
     if (!path.includes('login.html') && !path.endsWith('/') && !path.includes('index.html')) {
         return;
     }
@@ -131,6 +120,7 @@ onAuthStateChanged(auth, (user) => {
         if (isGoogle) {
             window.location.assign('professor.html');
         } else {
+            // Email/senha — verifica se é admin ou professor
             window.location.assign('admin.html');
         }
     }
@@ -138,10 +128,5 @@ onAuthStateChanged(auth, (user) => {
 
 // --- 6. LOGOUT ---
 window.logoutUser = () => {
-    signOut(auth).then(() => {
-        localStorage.removeItem('profToken');
-        localStorage.removeItem('profEmail');
-        localStorage.removeItem('profUid');
-        window.location.assign('login.html');
-    });
+    signOut(auth).then(() => window.location.assign('login.html'));
 };
