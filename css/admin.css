@@ -76,68 +76,63 @@ input, select { width: 100%; padding: 12px; border-radius: 10px; border: 1px sol
 
 /* --- CORREÇÃO DE LAYOUT MOBILE PARA ADMIN --- */
 @media (max-width: 768px) {
+    /* Ajusta o layout geral para não travar a tela */
     .admin-layout {
-        flex-direction: column; /* Empilha a barra e o conteúdo */
-        height: auto;
-        overflow-x: hidden;
+        display: block !important; /* Quebra a estrutura de colunas */
+        height: auto !important;
+        overflow-y: auto !important;
     }
 
+    /* Ajusta a barra superior (antiga lateral) */
     .sidebar {
-        width: 100%;
-        height: auto;
-        padding: 10px;
-        position: relative; /* Remove a sobreposição (não fica mais por cima) */
-        display: block;
+        width: 100% !important;
+        height: auto !important; /* ESSENCIAL: libera o espaço para o conteúdo */
+        min-height: auto !important;
+        padding: 10px 15px !important;
+        position: relative !important;
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 10px !important;
     }
 
-    .sidebar-logo { 
-        margin-bottom: 10px; 
-        justify-content: center;
-        font-size: 1.1rem; 
+    /* Estiliza o logo para ficar menor no topo */
+    .sidebar-logo {
+        margin-bottom: 5px !important;
+        justify-content: flex-start !important;
+        font-size: 1rem !important;
     }
-    
+
+    /* Transforma o menu em uma linha horizontal rolável */
     .sidebar nav ul {
-        display: flex;
-        flex-direction: row; /* Menu horizontal */
-        overflow-x: auto; /* Permite deslizar os ícones */
-        gap: 5px;
-        padding: 5px 0;
+        display: flex !important;
+        flex-direction: row !important;
+        overflow-x: auto !important;
+        gap: 8px !important;
+        padding: 5px 0 10px 0 !important;
         scrollbar-width: none;
         -webkit-overflow-scrolling: touch;
     }
     .sidebar nav ul::-webkit-scrollbar { display: none; }
 
+    /* Itens do menu como botões compactos */
     .nav-item {
-        flex: 0 0 auto; /* Impede que os itens se esmaguem */
-        padding: 8px 12px;
-        font-size: 0.75rem;
-        background: rgba(255,255,255,0.05);
-        justify-content: center;
+        flex: 0 0 auto !important;
+        padding: 8px 15px !important;
+        margin-bottom: 0 !important;
+        font-size: 0.75rem !important;
+        border-radius: 10px !important;
     }
 
-    .nav-item span { 
-        display: block; /* Garante que o texto apareça ao lado/abaixo do ícone */
-        white-space: nowrap;
-    }
-
+    /* Ajusta a área de conteúdo para aparecer logo abaixo */
     .main-content {
-        padding: 15px;
-        width: 100%;
-        overflow-x: hidden;
+        width: 100% !important;
+        padding: 15px !important;
+        background: #f1f5f9 !important; /* Cor de fundo clara para destacar dos botões */
+        display: block !important;
     }
 
-    /* Ajuste nos cards para não ocuparem a tela toda */
-    .grid-3 {
-        grid-template-columns: 1fr;
-        gap: 12px;
-    }
-
-    .stat-card {
-        padding: 15px;
-    }
-
-    /* Esconde elementos pesados da barra no mobile */
-    .support-card, .sidebar-bottom {
-        display: none;
+    /* Esconde elementos desnecessários no mobile */
+    .support-card, .sidebar-bottom, .sidebar-logo img {
+        display: none !important;
     }
 }
