@@ -5,7 +5,6 @@ import { getStorage } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-s
 
 const firebaseConfig = {
   apiKey: "AIzaSyARF0_xRnR9GxNrWGCcL3TzL0t_NypubOs",
-  // ✅ RESTAURADO: authDomain original do Firebase (necessário para o popup funcionar)
   authDomain: "sgh-escolar-pro.firebaseapp.com",
   projectId: "sgh-escolar-pro",
   storageBucket: "sgh-escolar-pro.firebasestorage.app",
@@ -18,6 +17,12 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
+
+// ✅ NOVA FUNÇÃO: Cria instância secundária para cadastrar professores sem deslogar o Admin
+export const createSecondaryAuth = () => {
+    const secondaryApp = initializeApp(firebaseConfig, "SecondaryApp");
+    return getAuth(secondaryApp);
+};
 
 // ✅ Garante persistência da sessão no localStorage
 setPersistence(auth, browserLocalPersistence).catch(e => console.error("Erro persistência:", e));
