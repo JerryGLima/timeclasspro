@@ -74,6 +74,37 @@ input, select { width: 100%; padding: 12px; border-radius: 10px; border: 1px sol
 .btn-delete { background: #fee2e2; color: #b91c1c; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 0.75rem; font-weight: 700; }
 .hidden { display: none !important; }
 
+/* --- RESET PARA DESKTOP (Garante que o PC ignore o mobile) --- */
+@media (min-width: 769px) {
+    .admin-layout {
+        display: flex !important; /* Volta a ficar lado a lado no PC */
+        height: 100vh !important;
+    }
+    .sidebar {
+        width: 280px !important; /* Mantém a largura fixa no PC */
+        height: 100vh !important;
+        position: relative !important;
+    }
+    .main-content {
+        flex: 1 !important;
+        display: block !important;
+        padding: 40px !important;
+        padding-bottom: 40px !important; /* Remove o recuo exagerado do mobile */
+    }
+    .sidebar-bottom {
+        position: relative !important; /* Não fica fixo na base no PC */
+        display: flex !important;
+    }
+    .mobile-only, .btn-suporte-mobile, .btn-sair-mobile {
+        display: none !important; /* Esconde botões de celular no PC */
+    }
+}
+
+/* --- SEU BLOCO ATUAL DE MOBILE CONTINUA ABAIXO --- */
+@media (max-width: 768px) {
+    /* ... seu código que termina com a chave que você enviou ... */
+}
+
 /* --- ADICIONE OU SUBSTITUA NO SEU ARQUIVO admin.css --- */
 @media (max-width: 768px) {
     /* 1. Ajuste do Container Geral */
