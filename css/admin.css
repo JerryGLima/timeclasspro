@@ -74,92 +74,102 @@ input, select { width: 100%; padding: 12px; border-radius: 10px; border: 1px sol
 .btn-delete { background: #fee2e2; color: #b91c1c; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 0.75rem; font-weight: 700; }
 .hidden { display: none !important; }
 
-/* --- CORREÇÃO DE LAYOUT MOBILE PARA ADMIN --- */
+/* --- ADICIONE OU SUBSTITUA NO SEU ARQUIVO admin.css --- */
 @media (max-width: 768px) {
-    /* Ajusta o layout geral */
+    /* 1. Ajuste do Container Geral */
     .admin-layout {
-        display: block !important;
-        height: auto !important;
-        overflow-y: auto !important;
+        display: flex !important;
+        flex-direction: column !important;
+        height: 100vh !important;
+        overflow: hidden !important;
     }
 
-    /* Barra superior compacta */
+    /* 2. Menu no TOPO (Horizontal e Rolável) */
     .sidebar {
         width: 100% !important;
         height: auto !important;
         padding: 10px 15px !important;
+        background: #0f172a !important;
         position: relative !important;
         display: flex !important;
         flex-direction: column !important;
         gap: 5px !important;
-        background: #0f172a !important;
     }
 
-    .sidebar-logo {
-        margin-bottom: 5px !important;
-        font-size: 1rem !important;
+    .sidebar-logo { 
+        margin-bottom: 5px !important; 
+        font-size: 1rem !important; 
     }
-
-    /* Menu horizontal rolável */
+    
     .sidebar nav ul {
         display: flex !important;
         flex-direction: row !important;
         overflow-x: auto !important;
         gap: 8px !important;
-        padding: 5px 0 10px 0 !important;
+        padding-bottom: 8px !important;
         scrollbar-width: none;
         -webkit-overflow-scrolling: touch;
     }
     .sidebar nav ul::-webkit-scrollbar { display: none; }
 
-    /* Estilo dos botões do menu */
     .nav-item {
         flex: 0 0 auto !important;
         padding: 8px 15px !important;
+        margin-bottom: 0 !important;
         font-size: 0.75rem !important;
-        border-radius: 10px !important;
     }
 
-    /* ✅ REATIVANDO SUPORTE E SAIR COMO ÍCONES NO MENU */
-    .sidebar-bottom {
-        display: block !important;
-        width: 100% !important;
-    }
-
-    /* Faz o botão sair e suporte aparecerem na mesma linha do menu */
-    .sidebar nav ul::after {
-        content: "";
-        padding-right: 20px;
-    }
-
-    /* Conteúdo principal logo abaixo */
+    /* 3. Área Central (Dados) - Agora ela rola independente */
     .main-content {
+        flex: 1 !important;
         width: 100% !important;
         padding: 15px !important;
+        overflow-y: auto !important;
         background: #f1f5f9 !important;
-        min-height: 80vh;
+        /* Espaço inferior para não esconder dados atrás do rodapé fixo */
+        padding-bottom: 180px !important; 
     }
 
-    /* Ajuste visual dos botões de suporte e sair no mobile */
-    .support-card {
-        display: inline-flex !important;
-        margin-bottom: 0 !important;
-        padding: 8px 15px !important;
-        background: #25d366 !important; /* Cor do WhatsApp direta */
-        border: none !important;
-        border-radius: 10px !important;
-        height: 35px;
+    /* 4. RODAPÉ FIXO (Suporte, Sair e Direitos) */
+    .sidebar-bottom {
+        display: flex !important;
+        flex-direction: column !important;
+        background: #0f172a !important; /* Mesma cor da sidebar para manter o estilo */
+        padding: 15px !important;
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        z-index: 1000 !important;
+        border-top: 1px solid rgba(255,255,255,0.1) !important;
+        box-shadow: 0 -5px 15px rgba(0,0,0,0.3) !important;
     }
-    .support-icon { display: none !important; } /* Esconde o ícone grande */
-    .support-title { font-size: 0.75rem !important; }
-    .support-subtitle { display: none !important; }
+
+    /* Ajuste dos cards internos no rodapé mobile */
+    .support-card {
+        margin-bottom: 10px !important;
+        padding: 10px !important;
+        background: rgba(255, 255, 255, 0.08) !important;
+    }
+
+    .support-icon {
+        width: 32px !important;
+        height: 32px !important;
+        font-size: 1rem !important;
+    }
+
+    .support-title { font-size: 0.8rem !important; }
+    .support-subtitle { font-size: 0.65rem !important; }
 
     .btn-logout {
-        display: inline-block !important;
-        width: auto !important;
-        padding: 8px 15px !important;
-        font-size: 0.75rem !important;
-        background: #ef4444 !important;
-        color: white !important;
+        padding: 10px !important;
+        font-size: 0.8rem !important;
+        width: 100% !important;
+    }
+
+    /* Ajuste do espaçamento dos direitos autorais */
+    .sidebar-bottom div[style*="margin-top: 20px"] {
+        margin-top: 10px !important;
+        opacity: 0.8;
     }
 }
