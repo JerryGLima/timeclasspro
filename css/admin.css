@@ -76,33 +76,31 @@ input, select { width: 100%; padding: 12px; border-radius: 10px; border: 1px sol
 
 /* --- CORREÇÃO DE LAYOUT MOBILE PARA ADMIN --- */
 @media (max-width: 768px) {
-    /* Ajusta o layout geral para não travar a tela */
+    /* Ajusta o layout geral */
     .admin-layout {
-        display: block !important; /* Quebra a estrutura de colunas */
+        display: block !important;
         height: auto !important;
         overflow-y: auto !important;
     }
 
-    /* Ajusta a barra superior (antiga lateral) */
+    /* Barra superior compacta */
     .sidebar {
         width: 100% !important;
-        height: auto !important; /* ESSENCIAL: libera o espaço para o conteúdo */
-        min-height: auto !important;
+        height: auto !important;
         padding: 10px 15px !important;
         position: relative !important;
         display: flex !important;
         flex-direction: column !important;
-        gap: 10px !important;
+        gap: 5px !important;
+        background: #0f172a !important;
     }
 
-    /* Estiliza o logo para ficar menor no topo */
     .sidebar-logo {
         margin-bottom: 5px !important;
-        justify-content: flex-start !important;
         font-size: 1rem !important;
     }
 
-    /* Transforma o menu em uma linha horizontal rolável */
+    /* Menu horizontal rolável */
     .sidebar nav ul {
         display: flex !important;
         flex-direction: row !important;
@@ -114,25 +112,54 @@ input, select { width: 100%; padding: 12px; border-radius: 10px; border: 1px sol
     }
     .sidebar nav ul::-webkit-scrollbar { display: none; }
 
-    /* Itens do menu como botões compactos */
+    /* Estilo dos botões do menu */
     .nav-item {
         flex: 0 0 auto !important;
         padding: 8px 15px !important;
-        margin-bottom: 0 !important;
         font-size: 0.75rem !important;
         border-radius: 10px !important;
     }
 
-    /* Ajusta a área de conteúdo para aparecer logo abaixo */
+    /* ✅ REATIVANDO SUPORTE E SAIR COMO ÍCONES NO MENU */
+    .sidebar-bottom {
+        display: block !important;
+        width: 100% !important;
+    }
+
+    /* Faz o botão sair e suporte aparecerem na mesma linha do menu */
+    .sidebar nav ul::after {
+        content: "";
+        padding-right: 20px;
+    }
+
+    /* Conteúdo principal logo abaixo */
     .main-content {
         width: 100% !important;
         padding: 15px !important;
-        background: #f1f5f9 !important; /* Cor de fundo clara para destacar dos botões */
-        display: block !important;
+        background: #f1f5f9 !important;
+        min-height: 80vh;
     }
 
-    /* Esconde elementos desnecessários no mobile */
-    .support-card, .sidebar-bottom, .sidebar-logo img {
-        display: none !important;
+    /* Ajuste visual dos botões de suporte e sair no mobile */
+    .support-card {
+        display: inline-flex !important;
+        margin-bottom: 0 !important;
+        padding: 8px 15px !important;
+        background: #25d366 !important; /* Cor do WhatsApp direta */
+        border: none !important;
+        border-radius: 10px !important;
+        height: 35px;
+    }
+    .support-icon { display: none !important; } /* Esconde o ícone grande */
+    .support-title { font-size: 0.75rem !important; }
+    .support-subtitle { display: none !important; }
+
+    .btn-logout {
+        display: inline-block !important;
+        width: auto !important;
+        padding: 8px 15px !important;
+        font-size: 0.75rem !important;
+        background: #ef4444 !important;
+        color: white !important;
     }
 }
