@@ -120,3 +120,41 @@ footer {
     .card { padding: 10px; }
     table { border-spacing: 4px; }
 }
+
+/* --- ADICIONAR AO FINAL DO SEU ARQUIVO horario-turma.css --- */
+
+@media (max-width: 600px) {
+    header {
+        padding: 20px 10px;
+    }
+
+    .modern-title {
+        font-size: 1rem;
+        padding: 8px 20px;
+    }
+
+    #gradeNamePublic {
+        font-size: 1.1rem;
+    }
+
+    .card {
+        padding: 10px;
+        margin: 0 -10px; /* Ganha espaço nas bordas */
+        border-radius: 15px;
+    }
+
+    table {
+        min-width: 750px; /* Garante que as colunas SEG, TER... fiquem legíveis */
+        border-spacing: 4px;
+    }
+
+    .time-column {
+        width: 90px;
+        font-size: 0.75rem;
+    }
+
+    .subject-card-public {
+        font-size: 0.8rem;
+        height: 50px;
+    }
+}
