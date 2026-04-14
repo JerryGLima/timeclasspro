@@ -73,3 +73,79 @@ input, select { width: 100%; padding: 12px; border-radius: 10px; border: 1px sol
 .btn-edit { background: #fef9c3; color: #a16207; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 0.75rem; font-weight: 700; margin-right: 5px; }
 .btn-delete { background: #fee2e2; color: #b91c1c; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 0.75rem; font-weight: 700; }
 .hidden { display: none !important; }
+
+@media (max-width: 768px) {
+    /* 1. Ajuste do Layout Geral */
+    .admin-layout {
+        display: flex !important;
+        flex-direction: column !important;
+        height: 100vh !important;
+    }
+
+    /* 2. Menu no TOPO (Compacto) */
+    .sidebar {
+        width: 100% !important;
+        height: auto !important;
+        padding: 10px 15px !important;
+        background: #0f172a !important;
+        position: relative !important;
+        display: block !important;
+    }
+
+    .sidebar-logo { margin-bottom: 5px !important; font-size: 1rem !important; }
+    
+    .sidebar nav ul {
+        display: flex !important;
+        flex-direction: row !important;
+        overflow-x: auto !important;
+        gap: 8px !important;
+        padding-bottom: 5px !important;
+        scrollbar-width: none;
+    }
+    .sidebar nav ul::-webkit-scrollbar { display: none; }
+
+    .nav-item {
+        flex: 0 0 auto !important;
+        padding: 8px 15px !important;
+        font-size: 0.75rem !important;
+        margin-bottom: 0 !important;
+    }
+
+    /* 3. Área de Dados (Centro) */
+    .main-content {
+        flex: 1 !important; /* Ocupa o espaço entre o topo e a base */
+        padding: 15px !important;
+        overflow-y: auto !important;
+        padding-bottom: 180px !important; /* Espaço para não cobrir os dados com o rodapé */
+    }
+
+    /* 4. Suporte, Sair e Direitos na BASE (Fixo) */
+    .sidebar-bottom {
+        display: flex !important;
+        flex-direction: column !important;
+        background: #0f172a !important;
+        padding: 15px !important;
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        z-index: 1000 !important;
+        border-top: 1px solid rgba(255,255,255,0.1) !important;
+        box-shadow: 0 -5px 15px rgba(0,0,0,0.2) !important;
+    }
+
+    .support-card {
+        margin-bottom: 10px !important;
+        padding: 10px !important;
+    }
+
+    .btn-logout {
+        padding: 10px !important;
+        font-size: 0.8rem !important;
+    }
+    
+    .copyright-mobile {
+        display: block !important;
+        margin-top: 8px !important;
+    }
+}
