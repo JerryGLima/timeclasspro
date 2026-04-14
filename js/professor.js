@@ -23,7 +23,6 @@ onAuthStateChanged(auth, async (user) => {
             console.log("📋 Docs encontrados:", profSnap.size);
 
             if (profSnap.empty) {
-                // ✅ Se não encontrou como professor, pode ser o admin — redireciona
                 console.log("⚠️ Não é professor, verificando se é admin...");
                 window.location.assign('admin.html');
                 return;
@@ -121,17 +120,31 @@ window.doCheckin = async (gradeId, period) => {
         if (!schoolCoords.lat) return alert("GPS da escola não configurado.");
         const userLoc = await getCurrentLocation();
         const distance = calculateDistance(userLoc.lat, userLoc.lng, schoolCoords.lat, schoolCoords.lng);
-        if (distance > 200) return alert(`Você está a ${Math.round(distance)}m da escola.`);
+        
+        // Limite ajustado para 1000m para melhor precisão em ambientes fechados
+        if (distance > 1000) return alert(`Você está a ${Math.round(distance)}m da escola.`);
+        
         const now = new Date();
-        await addDoc(collection(db, "attendance"), {
+        const payload = {
             schoolId, gradeId, period, teacherId: currentProfId,
             date: now.toISOString().split('T')[0],
             time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             timestamp: now.toISOString(), manual: false
-        });
-        alert("Ponto registrado!");
+        };
+
+        // Aguarda a gravação no Firestore antes de recarregar a página
+        await addDoc(collection(db, "attendance"), payload);
+        
+        alert("✅ Ponto registrado com sucesso!");
+        
+        // O recarregamento agora ocorre apenas após o OK do usuário no alert, 
+        // dando tempo para o Firebase manter a sessão ativa.
         location.reload();
-    } catch (e) { alert(e.message); }
+        
+    } catch (e) { 
+        console.error("Erro ao registrar ponto:", e);
+        alert("Erro ao registrar: " + e.message); 
+    }
 };
 
 function renderTablePremium(lessons, subMap, config) {
