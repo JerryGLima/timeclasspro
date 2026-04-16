@@ -8,8 +8,8 @@ let schoolId = "";
 window.tempVinculos = []; 
 let subjectMap = {}; 
 let allGrades = []; 
-let gradeMap = {}; // Mapa para consultas rápidas
-let teacherMap = {}; // Mapa para consultas rápidas
+let gradeMap = {}; 
+let teacherMap = {}; 
 let globalSchoolName = "";
 let monitorMode = "now";
 
@@ -272,8 +272,8 @@ window.confirmManual = async (gId, period, tId) => {
     loadAttendance();
 };
 
-// --- CRUD TURMAS & MATÉRIAS & PROFESSORES (Inalterado da original, apenas adicionado re-populamento) ---
-document.getElementById('btnSaveConfig').onclick = async () => { /* ... (mesmo código original) ... */ 
+// --- CRUD TURMAS & MATÉRIAS & PROFESSORES ---
+document.getElementById('btnSaveConfig').onclick = async () => { 
     const gradeName = document.getElementById('gradeName').value;
     const editId = document.getElementById('editGradeId').value;
     if(!gradeName) return alert("Preencha o nome!");
@@ -390,7 +390,7 @@ async function loadAllData() {
     
     const cols = ['subjects', 'grades', 'teachers'];
     let tC = []; let gC = [];
-    subjectMap = {}; gradeMap = {}; teacherMap = {}; // Reset maps
+    subjectMap = {}; gradeMap = {}; teacherMap = {}; 
 
     for (const col of cols) {
         const snap = await getDocs(query(collection(db, col), where("schoolId", "==", schoolId)));
@@ -405,7 +405,7 @@ async function loadAllData() {
             dataArray.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { numeric: true })); 
             allGrades = dataArray; gC = dataArray; 
             dataArray.forEach(d => gradeMap[d.id] = d);
-            // Populate selects
+            
             ['freqGradeFilter', 'subGradeSearch'].forEach(id => {
                 const el = document.getElementById(id);
                 if(el) { el.innerHTML = '<option value="">Selecione...</option>'; dataArray.forEach(g => el.innerHTML += `<option value="${g.id}">${g.name}</option>`); }
@@ -470,8 +470,9 @@ function processDashboardInt(teachers, grades, schedules, workload) {
     });
 }
 
-// --- GERADOR DE HORÁRIO --- (Mantido idêntico)
+// --- GERADOR DE HORÁRIO --- 
 document.getElementById('selectGrade').onchange = (e) => { if(e.target.value) renderTimetable(e.target.value); };
+
 async function renderTimetable(gradeId) {
     const grade = gradeMap[gradeId];
     const container = document.getElementById('timetableContainer');
@@ -515,6 +516,7 @@ async function renderTimetable(gradeId) {
         };
     });
 }
+
 document.getElementById('btnSaveFullSchedule').onclick = async () => {
     const gradeId = document.getElementById('selectGrade').value; if(!gradeId) return;
     const selects = document.querySelectorAll('.schedule-select');
@@ -528,9 +530,86 @@ document.getElementById('btnSaveFullSchedule').onclick = async () => {
     }
     alert("✅ Grade salva!"); loadAllData();
 };
-document.getElementById('btnCopyPublicLink').onclick = () => { /* ... */ };
-document.getElementById('btnExportPdfAdmin').onclick = async () => { /* ... (mesmo do original html2pdf) ... */ };
-window.del = async (c, i) => { if(confirm("Excluir?")) { await deleteDoc(doc(db, c, i)); loadAllData(); }};
+
+// --- FUNÇÕES CORRIGIDAS E INTEGRADAS ---
+document.getElementById('btnCopyPublicLink').onclick = () => {
+    const gid = document.getElementById('selectGrade').value; 
+    if(!gid) return alert("Selecione uma turma primeiro!");
+    const link = `${window.location.origin}${window.location.pathname.replace('admin.html', 'turma.html')}?s=${schoolId}&g=${gid}`;
+    navigator.clipboard.writeText(link); 
+    alert("🔗 Link da turma copiado com sucesso!");
+};
+
+document.getElementById('btnExportPdfAdmin').onclick = async () => {
+    const gid = document.getElementById('selectGrade').value; 
+    if(!gid) return alert("Selecione uma turma primeiro!");
+    
+    const grade = gradeMap[gid];
+    const container = document.getElementById('timetableContainer');
+    const header = document.getElementById('headerGradeAdmin');
+    
+    document.getElementById('viewGradeAdmin').textContent = grade.name;
+    document.getElementById('viewCourseAdmin').textContent = grade.courseName;
+    document.getElementById('schoolLogoPrint').src = grade.logoUrl || "";
+    
+    const tableClone = container.querySelector('table').cloneNode(true);
+    const selects = container.querySelectorAll('select');
+    
+    let selIdx = 0;
+    tableClone.querySelectorAll('tr').forEach((tr) => {
+        if(tr.classList.contains('intervalo-row')) return;
+        tr.querySelectorAll('td').forEach((td, colIdx) => {
+            if(colIdx === 0) return;
+            const val = selects[selIdx].value; 
+            td.innerHTML = "";
+            if(val) {
+                const [tId, sId] = val.split('|');
+                const sub = subjectMap[sId];
+                td.innerHTML = `<div style="background:${sub?.color || '#6366f1'}; color:white; font-weight:700; border-radius:6px; height:26px; display:flex; align-items:center; justify-content:center; text-align:center; padding:2px; font-size:0.55rem; white-space: nowrap; overflow: hidden;">${sub?.name || 'Aula'}</div>`;
+            } else {
+                td.innerHTML = `<div style="background:#f8fafc; border-radius:8px; border: 1px dashed #e2e8f0; height:26px;"></div>`;
+            }
+            selIdx++;
+        });
+    });
+    
+    tableClone.querySelectorAll('.time-column').forEach(el => { 
+        el.style.height = "26px"; 
+        el.style.fontSize = "0.55rem"; 
+        el.style.width = "85px"; 
+    });
+    
+    const pw = document.createElement('div'); 
+    pw.style.padding = "10px"; 
+    pw.style.backgroundColor = "white";
+    
+    const clonedHeader = header.cloneNode(true); 
+    clonedHeader.style.display = "block";
+    
+    pw.appendChild(clonedHeader);
+    pw.appendChild(tableClone);
+    
+    const foot = document.createElement('div');
+    foot.innerHTML = `<p style="text-align:center; font-size:0.45rem; color:#94a3b8; margin-top:2px; border-top:1px solid #eee; padding-top:1px">Direitos reservados a Jerry Gleydison &copy; ${new Date().getFullYear()}</p>`;
+    pw.appendChild(foot);
+    
+    html2pdf().set({ 
+        margin: [10, 10, 10, 10], 
+        filename: `Horario_${grade.name}.pdf`, 
+        image: { type: 'jpeg', quality: 1 }, 
+        html2canvas: { scale: 3, backgroundColor: '#ffffff', useCORS: true }, 
+        jsPDF: { unit: 'mm', format: [210, 147.5], orientation: 'landscape' },
+        pagebreak: { mode: ['css', 'legacy'] }
+    }).from(pw).save();
+};
+
+window.del = async (c, i) => { 
+    if(confirm("Tem certeza que deseja excluir?")) { 
+        await deleteDoc(doc(db, c, i)); 
+        loadAllData(); 
+    }
+};
+
 window.prepareEditProfessor = (id) => window.editProfessor(id);
 
 
@@ -625,7 +704,7 @@ document.getElementById('btnExportFinancePDF').onclick = () => {
 // ============================================================================
 // --- FINANCEIRO 2: RELATÓRIO INDIVIDUAL DETALHADO ---
 // ============================================================================
-let globalIndData = {}; // Armazena dados temporários para o whatsapp
+let globalIndData = {};
 
 document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     const profId = document.getElementById('financeTeacherSelect').value;
@@ -639,7 +718,6 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     document.getElementById('printIndividualFinanceArea').style.display = "block";
     document.getElementById('individualActions').classList.add("hidden");
 
-    // Preenche cabeçalho
     document.getElementById('indSchoolName').textContent = globalSchoolName;
     document.getElementById('indProfName').textContent = professor.name;
     document.getElementById('indMonth').textContent = monthVal.split('-').reverse().join('/');
@@ -648,11 +726,9 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     const daysInMonth = new Date(year, month, 0).getDate();
     const daysWeek = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 
-    // 1. Busca grade fixa deste professor
     const sSnap = await getDocs(query(collection(db, "schedules"), where("schoolId", "==", schoolId), where("teacherId", "==", profId)));
     const mySchedules = sSnap.docs.map(d => d.data());
 
-    // 2. Busca todas as frequências da escola para o mês
     const attSnap = await getDocs(query(collection(db, "attendance"), where("schoolId", "==", schoolId)));
     const allAtt = attSnap.docs.map(d => d.data()).filter(a => a.date && a.date.startsWith(monthVal));
 
@@ -674,25 +750,19 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     let contFaltas = 0;
     let recordsFound = 0;
 
-    // Varre cada dia do mês
     for (let i = 1; i <= daysInMonth; i++) {
         const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
         const dateObj = new Date(year, month - 1, i);
         const dayName = daysWeek[dateObj.getDay()];
 
-        // Aulas previstas para este dia da semana
         const expectedToday = mySchedules.filter(s => s.day === dayName);
-        
-        // Substituições feitas por este professor neste dia
         const substitutionsDoneToday = allAtt.filter(a => a.date === dateStr && a.teacherId === profId && a.isSubstitution);
 
-        // Processa as esperadas
         expectedToday.forEach(exp => {
             contPrevistas++;
             const tName = gradeMap[exp.gradeId]?.name || "Turma";
             const sName = subjectMap[exp.subjectId]?.sigla || "Matéria";
             
-            // Verifica se tem presença (seja manual ou checkin)
             const wasPresent = allAtt.find(a => a.date === dateStr && a.gradeId === exp.gradeId && a.period === exp.period && a.teacherId === profId);
             
             let statusBadge = `<span style="background: #fee2e2; color: #ef4444; padding: 3px 8px; border-radius: 4px; font-weight: 700;">❌ Falta</span>`;
@@ -701,7 +771,6 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
                 contDadas++;
                 statusBadge = `<span style="background: #dcfce7; color: #10b981; padding: 3px 8px; border-radius: 4px; font-weight: 700;">✅ Presente</span>`;
             } else {
-                // Se não estava presente, outra pessoa substituiu?
                 const foiSubstituido = allAtt.find(a => a.date === dateStr && a.gradeId === exp.gradeId && a.period === exp.period && a.isSubstitution);
                 if (foiSubstituido) {
                     statusBadge = `<span style="background: #fef9c3; color: #ca8a04; padding: 3px 8px; border-radius: 4px; font-weight: 700;">⚠️ Substituído</span>`;
@@ -720,7 +789,6 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
             </tr>`;
         });
 
-        // Processa substituições extras feitas
         substitutionsDoneToday.forEach(sub => {
             contDadas++;
             const tName = gradeMap[sub.gradeId]?.name || "Turma";
@@ -743,7 +811,6 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     htmlTable += `</tbody></table>`;
     document.getElementById('indTableContainer').innerHTML = htmlTable;
 
-    // Atualiza o resumo
     const totalFinanceiro = contDadas * valorHora;
     document.getElementById('indSumPrevistas').textContent = contPrevistas;
     document.getElementById('indSumFaltas').textContent = contFaltas;
@@ -751,10 +818,8 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     document.getElementById('indSumValor').textContent = `R$ ${valorHora.toFixed(2).replace('.', ',')}`;
     document.getElementById('indSumTotal').textContent = `R$ ${totalFinanceiro.toFixed(2).replace('.', ',')}`;
 
-    // Mostra botões
     document.getElementById('individualActions').classList.remove("hidden");
 
-    // Salva para o WhatsApp
     globalIndData = {
         profName: professor.name,
         mes: document.getElementById('indMonth').textContent,
