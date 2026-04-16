@@ -624,7 +624,7 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
     if (valorHora <= 0) return alert("⚠️ Informe um valor válido para a Hora/Aula!");
     
     const container = document.getElementById('financeResultContainer');
-    container.innerHTML = "<p style='text-align:center;'>Calculando dados...</p>";
+    container.innerHTML = "<p style='text-align:center;'>Calculando dados e cruzando substituições...</p>";
 
     const [year, month] = monthVal.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
@@ -634,30 +634,49 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
     for (let i = 1; i <= daysInMonth; i++) dayCounts[daysWeek[new Date(year, month - 1, i).getDay()]]++;
 
     const teachersData = {};
-    Object.values(teacherMap).forEach(t => { teachersData[t.id] = { name: t.name, previstas: 0, dadas: 0 }; });
+    Object.values(teacherMap).forEach(t => { teachersData[t.id] = { name: t.name, previstas: 0, dadas: 0, substituido: 0 }; });
 
+    // Mapear quem é o titular de cada aula para saber quem perdeu a aula numa substituição
+    const schedMap = {};
     const sSnap = await getDocs(query(collection(db, "schedules"), where("schoolId", "==", schoolId)));
     sSnap.forEach(d => {
         const s = d.data();
+        schedMap[`${s.gradeId}-${s.day}-${s.period}`] = s.teacherId;
         if (teachersData[s.teacherId] && dayCounts[s.day]) teachersData[s.teacherId].previstas += dayCounts[s.day];
     });
 
     const attSnap = await getDocs(query(collection(db, "attendance"), where("schoolId", "==", schoolId)));
     attSnap.forEach(d => {
         const att = d.data();
-        if (att.date && att.date.startsWith(monthVal) && teachersData[att.teacherId]) {
-            teachersData[att.teacherId].dadas++;
+        if (att.date && att.date.startsWith(monthVal)) {
+            // Professor que efetivamente deu a aula
+            if (teachersData[att.teacherId]) {
+                teachersData[att.teacherId].dadas++;
+            }
+            // Se foi substituição, vamos creditar a "falta coberta" para o titular original
+            if (att.isSubstitution) {
+                const [y, m, dayOfMonth] = att.date.split('-').map(Number);
+                const dateObj = new Date(y, m - 1, dayOfMonth);
+                const dayName = daysWeek[dateObj.getDay()];
+                const titularId = schedMap[`${att.gradeId}-${dayName}-${att.period}`];
+                
+                if (titularId && teachersData[titularId]) {
+                    teachersData[titularId].substituido++;
+                }
+            }
         }
     });
 
-    let html = `<table style="width:100%; border-collapse: collapse; margin-top: 15px; font-size: 0.9rem;">
+    let html = `<table style="width:100%; border-collapse: collapse; margin-top: 15px; font-size: 0.85rem;">
         <thead>
             <tr style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
                 <th style="padding: 12px; text-align: left;">Professor</th>
                 <th style="padding: 12px; text-align: center;">Previstas</th>
                 <th style="padding: 12px; text-align: center;">Dadas</th>
                 <th style="padding: 12px; text-align: center;">Faltas</th>
+                <th style="padding: 12px; text-align: center;">Subst.</th>
                 <th style="padding: 12px; text-align: center;">% Freq.</th>
+                <th style="padding: 12px; text-align: right;">Desconto (-)</th>
                 <th style="padding: 12px; text-align: right;">A Receber</th>
             </tr>
         </thead><tbody>`;
@@ -668,7 +687,9 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
             const faltas = Math.max(0, p.previstas - p.dadas);
             const pct = p.previstas > 0 ? ((p.dadas / p.previstas) * 100).toFixed(1) : 100;
             const totalProf = p.dadas * valorHora;
+            const desconto = p.substituido * valorHora; // Valor informativo negativo
             totalGeral += totalProf;
+            
             let pctColor = pct >= 90 ? '#10b981' : (pct >= 70 ? '#f59e0b' : '#ef4444');
 
             html += `<tr style="border-bottom: 1px solid #e2e8f0;">
@@ -676,13 +697,15 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
                 <td style="padding: 10px; text-align: center;">${p.previstas}</td>
                 <td style="padding: 10px; text-align: center; font-weight: bold;">${p.dadas}</td>
                 <td style="padding: 10px; text-align: center; color: #ef4444;">${faltas}</td>
+                <td style="padding: 10px; text-align: center; color: #f97316; font-weight: bold;">${p.substituido}</td>
                 <td style="padding: 10px; text-align: center; color: ${pctColor}; font-weight: bold;">${pct}%</td>
+                <td style="padding: 10px; text-align: right; font-weight: bold; color: #ef4444;">- R$ ${desconto.toFixed(2).replace('.', ',')}</td>
                 <td style="padding: 10px; text-align: right; font-weight: bold; color: #10b981;">R$ ${totalProf.toFixed(2).replace('.', ',')}</td>
             </tr>`;
         }
     });
 
-    html += `</tbody><tfoot><tr style="background: #e0e7ff; font-weight: 800;"><td colspan="5" style="padding: 12px; text-align: right;">TOTAL DA FOLHA:</td><td style="padding: 12px; text-align: right; color: #4f46e5;">R$ ${totalGeral.toFixed(2).replace('.', ',')}</td></tr></tfoot></table>`;
+    html += `</tbody><tfoot><tr style="background: #e0e7ff; font-weight: 800;"><td colspan="7" style="padding: 12px; text-align: right;">TOTAL DA FOLHA:</td><td style="padding: 12px; text-align: right; color: #4f46e5;">R$ ${totalGeral.toFixed(2).replace('.', ',')}</td></tr></tfoot></table>`;
     
     container.innerHTML = html;
     document.getElementById('headerFinancePrint').style.display = 'block';
@@ -748,6 +771,7 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     let contPrevistas = 0;
     let contDadas = 0;
     let contFaltas = 0;
+    let contSubstituido = 0; // Quantas aulas outro prof cobriu
     let recordsFound = 0;
 
     for (let i = 1; i <= daysInMonth; i++) {
@@ -756,6 +780,7 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
         const dayName = daysWeek[dateObj.getDay()];
 
         const expectedToday = mySchedules.filter(s => s.day === dayName);
+        // Substituições feitas por ele no lugar de outra pessoa
         const substitutionsDoneToday = allAtt.filter(a => a.date === dateStr && a.teacherId === profId && a.isSubstitution);
 
         expectedToday.forEach(exp => {
@@ -771,11 +796,13 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
                 contDadas++;
                 statusBadge = `<span style="background: #dcfce7; color: #10b981; padding: 3px 8px; border-radius: 4px; font-weight: 700;">✅ Presente</span>`;
             } else {
+                contFaltas++;
+                // Outro professor cobriu essa aula que era dele?
                 const foiSubstituido = allAtt.find(a => a.date === dateStr && a.gradeId === exp.gradeId && a.period === exp.period && a.isSubstitution);
                 if (foiSubstituido) {
-                    statusBadge = `<span style="background: #fef9c3; color: #ca8a04; padding: 3px 8px; border-radius: 4px; font-weight: 700;">⚠️ Substituído</span>`;
+                    contSubstituido++;
+                    statusBadge = `<span style="background: #ffedd5; color: #ea580c; padding: 3px 8px; border-radius: 4px; font-weight: 700;">⚠️ Coberto por outro</span>`;
                 }
-                contFaltas++;
             }
 
             recordsFound++;
@@ -799,7 +826,7 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
                 <td style="padding: 8px;">${tName}</td>
                 <td style="padding: 8px;">Substituição Extra</td>
                 <td style="padding: 8px; text-align: center;">${sub.period}º</td>
-                <td style="padding: 8px; text-align: center;"><span style="background: #e0e7ff; color: #4338ca; padding: 3px 8px; border-radius: 4px; font-weight: 700;">🔄 Cobertura</span></td>
+                <td style="padding: 8px; text-align: center;"><span style="background: #e0e7ff; color: #4338ca; padding: 3px 8px; border-radius: 4px; font-weight: 700;">🔄 Cobrindo outro prof.</span></td>
             </tr>`;
         });
     }
@@ -807,16 +834,30 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     if(recordsFound === 0) {
         htmlTable += `<tr><td colspan="6" style="padding: 20px; text-align: center; color: #94a3b8;">Nenhum registro encontrado no período.</td></tr>`;
     }
-    
     htmlTable += `</tbody></table>`;
     document.getElementById('indTableContainer').innerHTML = htmlTable;
 
     const totalFinanceiro = contDadas * valorHora;
-    document.getElementById('indSumPrevistas').textContent = contPrevistas;
-    document.getElementById('indSumFaltas').textContent = contFaltas;
-    document.getElementById('indSumDadas').textContent = contDadas;
-    document.getElementById('indSumValor').textContent = `R$ ${valorHora.toFixed(2).replace('.', ',')}`;
-    document.getElementById('indSumTotal').textContent = `R$ ${totalFinanceiro.toFixed(2).replace('.', ',')}`;
+    const descontoFinanceiro = contSubstituido * valorHora;
+
+    // Gerando o quadro de resumo financeiro atualizado
+    const resumoHtml = `
+        <table style="width: 380px; border-collapse: collapse; font-size: 0.9rem; border: 2px solid #cbd5e1;">
+            <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600;">Aulas Previstas</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">${contPrevistas}</td></tr>
+            <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#ef4444;">Faltas (Total)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#ef4444;">${contFaltas}</td></tr>
+            <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#ea580c;">Cobertas por Substituto</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#ea580c; font-weight:bold;">${contSubstituido}</td></tr>
+            <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#10b981;">Aulas Ministradas/Subst.</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#10b981; font-weight:bold;">${contDadas}</td></tr>
+            <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600;">Valor Hora/Aula</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">R$ ${valorHora.toFixed(2).replace('.', ',')}</td></tr>
+            <tr style="background: #fee2e2;"><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#b91c1c;">Desconto (Substituições)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#b91c1c; font-weight:bold;">- R$ ${descontoFinanceiro.toFixed(2).replace('.', ',')}</td></tr>
+            <tr style="background: #eef2ff;"><td style="padding:12px 8px; font-weight:800; color:#4338ca;">TOTAL A RECEBER</td><td style="padding:12px 8px; text-align:right; font-weight:800; font-size:1.1rem; color:#4338ca;">R$ ${totalFinanceiro.toFixed(2).replace('.', ',')}</td></tr>
+        </table>
+    `;
+    
+    // Substitui a div do resumo antigo pela nova estrutura renderizada pelo JS
+    const summaryContainer = document.getElementById('indSumTotal')?.closest('table')?.parentElement;
+    if (summaryContainer) {
+        summaryContainer.innerHTML = resumoHtml;
+    }
 
     document.getElementById('individualActions').classList.remove("hidden");
 
@@ -825,6 +866,8 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
         mes: document.getElementById('indMonth').textContent,
         dadas: contDadas,
         faltas: contFaltas,
+        substituidas: contSubstituido,
+        desconto: descontoFinanceiro.toFixed(2).replace('.', ','),
         total: totalFinanceiro.toFixed(2).replace('.', ',')
     };
 };
@@ -844,7 +887,7 @@ document.getElementById('btnExportIndividualPDF').onclick = () => {
 };
 
 document.getElementById('btnSendWhatsAppIndividual').onclick = () => {
-    const msg = `*Relatório Financeiro - TimeClass Pro*\n\nOlá, prof. *${globalIndData.profName}*.\nSegue o resumo do seu extrato referente a *${globalIndData.mes}*:\n\n✅ *Aulas Ministradas:* ${globalIndData.dadas}\n❌ *Faltas:* ${globalIndData.faltas}\n💰 *Total a Receber:* R$ ${globalIndData.total}\n\nA direção possui o PDF detalhado disponível para assinatura.`;
+    const msg = `*Relatório Financeiro - TimeClass Pro*\n\nOlá, prof. *${globalIndData.profName}*.\nSegue o resumo do seu extrato referente a *${globalIndData.mes}*:\n\n✅ *Aulas Ministradas:* ${globalIndData.dadas}\n❌ *Faltas Totais:* ${globalIndData.faltas}\n🔄 *Aulas Cobertas por Outro:* ${globalIndData.substituidas}\n📉 *Desconto Estimado (Substituições):* - R$ ${globalIndData.desconto}\n\n💰 *Total a Receber:* R$ ${globalIndData.total}\n\nA direção possui o PDF detalhado disponível para assinatura.`;
     const link = `https://wa.me/?text=${encodeURIComponent(msg)}`;
     window.open(link, '_blank');
 };
