@@ -531,7 +531,6 @@ document.getElementById('btnSaveFullSchedule').onclick = async () => {
     alert("✅ Grade salva!"); loadAllData();
 };
 
-// --- FUNÇÕES CORRIGIDAS E INTEGRADAS ---
 document.getElementById('btnCopyPublicLink').onclick = () => {
     const gid = document.getElementById('selectGrade').value; 
     if(!gid) return alert("Selecione uma turma primeiro!");
@@ -636,7 +635,7 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
     const teachersData = {};
     Object.values(teacherMap).forEach(t => { teachersData[t.id] = { name: t.name, previstas: 0, dadas: 0, substituido: 0 }; });
 
-    // Mapear quem é o titular de cada aula para saber quem perdeu a aula numa substituição
+    // Mapear quem é o titular de cada aula
     const schedMap = {};
     const sSnap = await getDocs(query(collection(db, "schedules"), where("schoolId", "==", schoolId)));
     sSnap.forEach(d => {
@@ -649,11 +648,9 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
     attSnap.forEach(d => {
         const att = d.data();
         if (att.date && att.date.startsWith(monthVal)) {
-            // Professor que efetivamente deu a aula
             if (teachersData[att.teacherId]) {
                 teachersData[att.teacherId].dadas++;
             }
-            // Se foi substituição, vamos creditar a "falta coberta" para o titular original
             if (att.isSubstitution) {
                 const [y, m, dayOfMonth] = att.date.split('-').map(Number);
                 const dateObj = new Date(y, m - 1, dayOfMonth);
@@ -687,7 +684,7 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
             const faltas = Math.max(0, p.previstas - p.dadas);
             const pct = p.previstas > 0 ? ((p.dadas / p.previstas) * 100).toFixed(1) : 100;
             const totalProf = p.dadas * valorHora;
-            const desconto = p.substituido * valorHora; // Valor informativo negativo
+            const desconto = p.substituido * valorHora;
             totalGeral += totalProf;
             
             let pctColor = pct >= 90 ? '#10b981' : (pct >= 70 ? '#f59e0b' : '#ef4444');
@@ -716,11 +713,19 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
 
 document.getElementById('btnExportFinancePDF').onclick = () => {
     const monthVal = document.getElementById('financeMonth').value;
+    const area = document.getElementById('printFinanceArea');
+
+    // PROTEÇÃO DE QUEBRA DE PÁGINA (Tabela Geral)
+    area.querySelectorAll('tr, tfoot').forEach(el => el.style.pageBreakInside = 'avoid');
+
     html2pdf().set({
-        margin: [15, 15, 15, 15], filename: `Folha_Consolidada_${monthVal}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-    }).from(document.getElementById('printFinanceArea')).save();
+        margin: [15, 15, 15, 15], 
+        filename: `Folha_Consolidada_${monthVal}.pdf`,
+        image: { type: 'jpeg', quality: 1 }, 
+        html2canvas: { scale: 2, windowWidth: 900 },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', 'tfoot'] }
+    }).from(area).save();
 };
 
 
@@ -771,7 +776,7 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     let contPrevistas = 0;
     let contDadas = 0;
     let contFaltas = 0;
-    let contSubstituido = 0; // Quantas aulas outro prof cobriu
+    let contSubstituido = 0; 
     let recordsFound = 0;
 
     for (let i = 1; i <= daysInMonth; i++) {
@@ -780,7 +785,6 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
         const dayName = daysWeek[dateObj.getDay()];
 
         const expectedToday = mySchedules.filter(s => s.day === dayName);
-        // Substituições feitas por ele no lugar de outra pessoa
         const substitutionsDoneToday = allAtt.filter(a => a.date === dateStr && a.teacherId === profId && a.isSubstitution);
 
         expectedToday.forEach(exp => {
@@ -797,7 +801,6 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
                 statusBadge = `<span style="background: #dcfce7; color: #10b981; padding: 3px 8px; border-radius: 4px; font-weight: 700;">✅ Presente</span>`;
             } else {
                 contFaltas++;
-                // Outro professor cobriu essa aula que era dele?
                 const foiSubstituido = allAtt.find(a => a.date === dateStr && a.gradeId === exp.gradeId && a.period === exp.period && a.isSubstitution);
                 if (foiSubstituido) {
                     contSubstituido++;
@@ -832,7 +835,7 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     }
 
     if(recordsFound === 0) {
-        htmlTable += `<tr><td colspan="6" style="padding: 20px; text-align: center; color: #94a3b8;">Nenhum registro encontrado no período.</td></tr>`;
+        htmlTable += `<tr><td colspan=\"6\" style=\"padding: 20px; text-align: center; color: #94a3b8;\">Nenhum registro encontrado no período.</td></tr>`;
     }
     htmlTable += `</tbody></table>`;
     document.getElementById('indTableContainer').innerHTML = htmlTable;
@@ -840,9 +843,8 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     const totalFinanceiro = contDadas * valorHora;
     const descontoFinanceiro = contSubstituido * valorHora;
 
-    // Gerando o quadro de resumo financeiro atualizado
     const resumoHtml = `
-        <table style="width: 380px; border-collapse: collapse; font-size: 0.9rem; border: 2px solid #cbd5e1;">
+        <table style="width: 380px; border-collapse: collapse; font-size: 0.9rem; border: 2px solid #cbd5e1; margin-left: auto;">
             <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600;">Aulas Previstas</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">${contPrevistas}</td></tr>
             <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#ef4444;">Faltas (Total)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#ef4444;">${contFaltas}</td></tr>
             <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#ea580c;">Cobertas por Substituto</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#ea580c; font-weight:bold;">${contSubstituido}</td></tr>
@@ -853,7 +855,6 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
         </table>
     `;
     
-    // Substitui a div do resumo antigo pela nova estrutura renderizada pelo JS
     const summaryContainer = document.getElementById('indSumTotal')?.closest('table')?.parentElement;
     if (summaryContainer) {
         summaryContainer.innerHTML = resumoHtml;
@@ -874,15 +875,29 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
 
 document.getElementById('btnExportIndividualPDF').onclick = () => {
     const area = document.getElementById('printIndividualFinanceArea');
-    const nome = globalIndData.profName.replace(/\s+/g, '_');
+    const nome = globalIndData.profName.replace(/\\s+/g, '_');
     const mes = document.getElementById('financeMonth').value;
     
+    // PROTEÇÃO DE QUEBRA DE PÁGINA (Extrato Individual)
+    area.querySelectorAll('tr').forEach(el => el.style.pageBreakInside = 'avoid');
+    
+    const tabelas = area.querySelectorAll('table');
+    if(tabelas.length > 1) {
+        tabelas[tabelas.length - 1].style.pageBreakInside = 'avoid';
+    }
+
+    const linhasAssinatura = area.querySelectorAll('.signature-line');
+    if(linhasAssinatura.length > 0) {
+        linhasAssinatura[0].parentElement.style.pageBreakInside = 'avoid';
+    }
+
     html2pdf().set({
         margin: [15, 15, 15, 15],
         filename: `Extrato_${nome}_${mes}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2 },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        image: { type: 'jpeg', quality: 1 },
+        html2canvas: { scale: 2, windowWidth: 900 },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', 'table', '.signature-line'] }
     }).from(area).save();
 };
 
