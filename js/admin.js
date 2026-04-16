@@ -542,64 +542,7 @@ document.getElementById('btnCopyPublicLink').onclick = () => {
 document.getElementById('btnExportPdfAdmin').onclick = async () => {
     const gid = document.getElementById('selectGrade').value; 
     if(!gid) return alert("Selecione uma turma primeiro!");
-    
-    const grade = gradeMap[gid];
-    const container = document.getElementById('timetableContainer');
-    const header = document.getElementById('headerGradeAdmin');
-    
-    document.getElementById('viewGradeAdmin').textContent = grade.name;
-    document.getElementById('viewCourseAdmin').textContent = grade.courseName;
-    document.getElementById('schoolLogoPrint').src = grade.logoUrl || "";
-    
-    const tableClone = container.querySelector('table').cloneNode(true);
-    const selects = container.querySelectorAll('select');
-    
-    let selIdx = 0;
-    tableClone.querySelectorAll('tr').forEach((tr) => {
-        if(tr.classList.contains('intervalo-row')) return;
-        tr.querySelectorAll('td').forEach((td, colIdx) => {
-            if(colIdx === 0) return;
-            const val = selects[selIdx].value; 
-            td.innerHTML = "";
-            if(val) {
-                const [tId, sId] = val.split('|');
-                const sub = subjectMap[sId];
-                td.innerHTML = `<div style="background:${sub?.color || '#6366f1'}; color:white; font-weight:700; border-radius:6px; height:26px; display:flex; align-items:center; justify-content:center; text-align:center; padding:2px; font-size:0.55rem; white-space: nowrap; overflow: hidden;">${sub?.name || 'Aula'}</div>`;
-            } else {
-                td.innerHTML = `<div style="background:#f8fafc; border-radius:8px; border: 1px dashed #e2e8f0; height:26px;"></div>`;
-            }
-            selIdx++;
-        });
-    });
-    
-    tableClone.querySelectorAll('.time-column').forEach(el => { 
-        el.style.height = "26px"; 
-        el.style.fontSize = "0.55rem"; 
-        el.style.width = "85px"; 
-    });
-    
-    const pw = document.createElement('div'); 
-    pw.style.padding = "10px"; 
-    pw.style.backgroundColor = "white";
-    
-    const clonedHeader = header.cloneNode(true); 
-    clonedHeader.style.display = "block";
-    
-    pw.appendChild(clonedHeader);
-    pw.appendChild(tableClone);
-    
-    const foot = document.createElement('div');
-    foot.innerHTML = `<p style="text-align:center; font-size:0.45rem; color:#94a3b8; margin-top:2px; border-top:1px solid #eee; padding-top:1px">Direitos reservados a Jerry Gleydison &copy; ${new Date().getFullYear()}</p>`;
-    pw.appendChild(foot);
-    
-    html2pdf().set({ 
-        margin: [10, 10, 10, 10], 
-        filename: `Horario_${grade.name}.pdf`, 
-        image: { type: 'jpeg', quality: 1 }, 
-        html2canvas: { scale: 3, backgroundColor: '#ffffff', useCORS: true }, 
-        jsPDF: { unit: 'mm', format: [210, 147.5], orientation: 'landscape' },
-        pagebreak: { mode: ['css', 'legacy'] }
-    }).from(pw).save();
+    await window.exportToPDFPRO('printAreaAdmin', `Horario_Turma.pdf`);
 };
 
 window.del = async (c, i) => { 
@@ -821,28 +764,26 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
         htmlTable += `<tr><td colspan=\"6\" style=\"padding: 20px; text-align: center; color: #94a3b8;\">Nenhum registro encontrado no período.</td></tr>`;
     }
     htmlTable += `</tbody></table>`;
-    document.getElementById('indTableContainer').innerHTML = htmlTable;
 
     const totalFinanceiro = contDadas * valorHora;
     const descontoFinanceiro = contSubstituido * valorHora;
 
+    // A MÁGICA: Embutimos o resumo de volta direto no container, garantindo que ele sempre exista!
     const resumoHtml = `
-        <table style="width: 380px; border-collapse: collapse; font-size: 0.9rem; border: 2px solid #cbd5e1; margin-left: auto;">
-            <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600;">Aulas Previstas</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">${contPrevistas}</td></tr>
-            <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#ef4444;">Faltas (Total)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#ef4444;">${contFaltas}</td></tr>
-            <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#ea580c;">Cobertas por Substituto</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#ea580c; font-weight:bold;">${contSubstituido}</td></tr>
-            <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#10b981;">Aulas Ministradas/Subst.</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#10b981; font-weight:bold;">${contDadas}</td></tr>
-            <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600;">Valor Hora/Aula</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">R$ ${valorHora.toFixed(2).replace('.', ',')}</td></tr>
-            <tr style="background: #fee2e2;"><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#b91c1c;">Desconto (Substituições)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#b91c1c; font-weight:bold;">- R$ ${descontoFinanceiro.toFixed(2).replace('.', ',')}</td></tr>
-            <tr style="background: #eef2ff;"><td style="padding:12px 8px; font-weight:800; color:#4338ca;">TOTAL A RECEBER</td><td style="padding:12px 8px; text-align:right; font-weight:800; font-size:1.1rem; color:#4338ca;">R$ ${totalFinanceiro.toFixed(2).replace('.', ',')}</td></tr>
-        </table>
+        <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
+            <table style="width: 380px; border-collapse: collapse; font-size: 0.9rem; border: 2px solid #cbd5e1;">
+                <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600;">Aulas Previstas</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">${contPrevistas}</td></tr>
+                <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#ef4444;">Faltas (Total)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#ef4444;">${contFaltas}</td></tr>
+                <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#ea580c;">Cobertas por Substituto</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#ea580c; font-weight:bold;">${contSubstituido}</td></tr>
+                <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#10b981;">Aulas Ministradas/Subst.</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#10b981; font-weight:bold;">${contDadas}</td></tr>
+                <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600;">Valor Hora/Aula</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">R$ ${valorHora.toFixed(2).replace('.', ',')}</td></tr>
+                <tr style="background: #fee2e2;"><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#b91c1c;">Desconto (Substituições)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#b91c1c; font-weight:bold;">- R$ ${descontoFinanceiro.toFixed(2).replace('.', ',')}</td></tr>
+                <tr style="background: #eef2ff;"><td style="padding:12px 8px; font-weight:800; color:#4338ca;">TOTAL A RECEBER</td><td style="padding:12px 8px; text-align:right; font-weight:800; font-size:1.1rem; color:#4338ca;">R$ ${totalFinanceiro.toFixed(2).replace('.', ',')}</td></tr>
+            </table>
+        </div>
     `;
     
-    const summaryContainer = document.getElementById('indSumTotal')?.closest('table')?.parentElement;
-    if (summaryContainer) {
-        summaryContainer.innerHTML = resumoHtml;
-    }
-
+    document.getElementById('indTableContainer').innerHTML = htmlTable + resumoHtml;
     document.getElementById('individualActions').classList.remove("hidden");
 
     globalIndData = {
@@ -864,58 +805,46 @@ document.getElementById('btnSendWhatsAppIndividual').onclick = () => {
 
 
 // ============================================================================
-// --- SOLUÇÃO PRO: GERADOR DE PDF VIRTUAL ISOLADO (Evita cortes de CSS Grid) ---
+// --- SOLUÇÃO PRO E DEFINITIVA: GERADOR DE PDF VIRTUAL ---
 // ============================================================================
 
 window.exportToPDFPRO = async (elementId, filename) => {
-    const originalElement = document.getElementById(elementId);
-    if(!originalElement) return;
+    const el = document.getElementById(elementId);
+    if(!el) return;
 
-    // 1. Cria um container "fantasma" invisível na tela com largura padronizada de A4 (800px)
-    const printContainer = document.createElement('div');
-    printContainer.style.position = 'absolute';
-    printContainer.style.top = '-9999px';
-    printContainer.style.left = '-9999px';
-    printContainer.style.width = '800px'; 
-    printContainer.style.background = 'white';
-    printContainer.style.padding = '20px';
+    // Proteções de quebra de página
+    el.querySelectorAll('tr, tfoot, .signature-line').forEach(node => node.style.pageBreakInside = 'avoid');
     
-    // 2. Clona o elemento exato
-    const clone = originalElement.cloneNode(true);
-    clone.style.display = 'block'; 
+    // Armazena os estilos originais para podermos desfazer depois
+    const originalCSS = el.style.cssText; 
     
-    // 3. Força quebra de página inteligente para não cortar tabelas e assinaturas
-    clone.querySelectorAll('tr, tfoot, .signature-line').forEach(el => el.style.pageBreakInside = 'avoid');
-    const tabelas = clone.querySelectorAll('table');
-    if(tabelas.length > 1) {
-        tabelas[tabelas.length - 1].style.pageBreakInside = 'avoid';
-    }
+    // MÁGICA: Força a largura na tela ativa, evitando que o CSS Mobile/Responsivo esprema a tabela
+    el.style.width = '800px';
+    el.style.maxWidth = '800px';
+    el.style.padding = '20px';
+    el.style.background = 'white';
 
-    printContainer.appendChild(clone);
-    document.body.appendChild(printContainer);
-
-    // 4. Dispara a renderização do PDF
     const opt = {
         margin: [15, 15, 15, 15],
         filename: filename,
         image: { type: 'jpeg', quality: 1 },
-        html2canvas: { scale: 2, useCORS: true, logging: false },
+        // windowWidth avisa a biblioteca qual deve ser o tamanho da janela de renderização
+        html2canvas: { scale: 2, useCORS: true, windowWidth: 800 }, 
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
         pagebreak: { mode: ['css', 'legacy'] }
     };
 
-    try {
-        await html2pdf().set(opt).from(printContainer).save();
-    } catch(e) {
-        console.error("Erro ao gerar PDF:", e);
-        alert("Houve um erro ao gerar o PDF.");
-    } finally {
-        // 5. Destrói o clone invisível para limpar a memória
-        document.body.removeChild(printContainer);
-    }
+    // Gera o PDF a partir do elemento visível (nunca fica em branco)
+    html2pdf().set(opt).from(el).save().then(() => {
+        // Restaura a visualização normal e fluída pro usuário assim que o download iniciar
+        el.style.cssText = originalCSS;
+    }).catch(err => {
+        console.error("Erro no PDF:", err);
+        el.style.cssText = originalCSS;
+    });
 };
 
-// Conecta os botões ao novo gerador PRO
+// Conecta os botões ao gerador blindado
 document.getElementById('btnExportFinancePDF').onclick = async () => {
     const monthVal = document.getElementById('financeMonth').value;
     await window.exportToPDFPRO('printFinanceArea', `Folha_Consolidada_${monthVal}.pdf`);
