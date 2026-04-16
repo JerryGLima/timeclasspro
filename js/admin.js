@@ -711,23 +711,6 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
     document.getElementById('btnExportFinancePDF').classList.remove('hidden');
 };
 
-document.getElementById('btnExportFinancePDF').onclick = () => {
-    const monthVal = document.getElementById('financeMonth').value;
-    const area = document.getElementById('printFinanceArea');
-
-    // PROTEÇÃO DE QUEBRA DE PÁGINA (Tabela Geral)
-    area.querySelectorAll('tr, tfoot').forEach(el => el.style.pageBreakInside = 'avoid');
-
-    html2pdf().set({
-        margin: [15, 15, 15, 15], 
-        filename: `Folha_Consolidada_${monthVal}.pdf`,
-        image: { type: 'jpeg', quality: 1 }, 
-        html2canvas: { scale: 2, windowWidth: 900 },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', 'tfoot'] }
-    }).from(area).save();
-};
-
 
 // ============================================================================
 // --- FINANCEIRO 2: RELATÓRIO INDIVIDUAL DETALHADO ---
@@ -873,36 +856,73 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     };
 };
 
-document.getElementById('btnExportIndividualPDF').onclick = () => {
-    const area = document.getElementById('printIndividualFinanceArea');
-    const nome = globalIndData.profName.replace(/\\s+/g, '_');
-    const mes = document.getElementById('financeMonth').value;
-    
-    // PROTEÇÃO DE QUEBRA DE PÁGINA (Extrato Individual)
-    area.querySelectorAll('tr').forEach(el => el.style.pageBreakInside = 'avoid');
-    
-    const tabelas = area.querySelectorAll('table');
-    if(tabelas.length > 1) {
-        tabelas[tabelas.length - 1].style.pageBreakInside = 'avoid';
-    }
-
-    const linhasAssinatura = area.querySelectorAll('.signature-line');
-    if(linhasAssinatura.length > 0) {
-        linhasAssinatura[0].parentElement.style.pageBreakInside = 'avoid';
-    }
-
-    html2pdf().set({
-        margin: [15, 15, 15, 15],
-        filename: `Extrato_${nome}_${mes}.pdf`,
-        image: { type: 'jpeg', quality: 1 },
-        html2canvas: { scale: 2, windowWidth: 900 },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', 'table', '.signature-line'] }
-    }).from(area).save();
-};
-
 document.getElementById('btnSendWhatsAppIndividual').onclick = () => {
     const msg = `*Relatório Financeiro - TimeClass Pro*\n\nOlá, prof. *${globalIndData.profName}*.\nSegue o resumo do seu extrato referente a *${globalIndData.mes}*:\n\n✅ *Aulas Ministradas:* ${globalIndData.dadas}\n❌ *Faltas Totais:* ${globalIndData.faltas}\n🔄 *Aulas Cobertas por Outro:* ${globalIndData.substituidas}\n📉 *Desconto Estimado (Substituições):* - R$ ${globalIndData.desconto}\n\n💰 *Total a Receber:* R$ ${globalIndData.total}\n\nA direção possui o PDF detalhado disponível para assinatura.`;
     const link = `https://wa.me/?text=${encodeURIComponent(msg)}`;
     window.open(link, '_blank');
+};
+
+
+// ============================================================================
+// --- SOLUÇÃO PRO: GERADOR DE PDF VIRTUAL ISOLADO (Evita cortes de CSS Grid) ---
+// ============================================================================
+
+window.exportToPDFPRO = async (elementId, filename) => {
+    const originalElement = document.getElementById(elementId);
+    if(!originalElement) return;
+
+    // 1. Cria um container "fantasma" invisível na tela com largura padronizada de A4 (800px)
+    const printContainer = document.createElement('div');
+    printContainer.style.position = 'absolute';
+    printContainer.style.top = '-9999px';
+    printContainer.style.left = '-9999px';
+    printContainer.style.width = '800px'; 
+    printContainer.style.background = 'white';
+    printContainer.style.padding = '20px';
+    
+    // 2. Clona o elemento exato
+    const clone = originalElement.cloneNode(true);
+    clone.style.display = 'block'; 
+    
+    // 3. Força quebra de página inteligente para não cortar tabelas e assinaturas
+    clone.querySelectorAll('tr, tfoot, .signature-line').forEach(el => el.style.pageBreakInside = 'avoid');
+    const tabelas = clone.querySelectorAll('table');
+    if(tabelas.length > 1) {
+        tabelas[tabelas.length - 1].style.pageBreakInside = 'avoid';
+    }
+
+    printContainer.appendChild(clone);
+    document.body.appendChild(printContainer);
+
+    // 4. Dispara a renderização do PDF
+    const opt = {
+        margin: [15, 15, 15, 15],
+        filename: filename,
+        image: { type: 'jpeg', quality: 1 },
+        html2canvas: { scale: 2, useCORS: true, logging: false },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'legacy'] }
+    };
+
+    try {
+        await html2pdf().set(opt).from(printContainer).save();
+    } catch(e) {
+        console.error("Erro ao gerar PDF:", e);
+        alert("Houve um erro ao gerar o PDF.");
+    } finally {
+        // 5. Destrói o clone invisível para limpar a memória
+        document.body.removeChild(printContainer);
+    }
+};
+
+// Conecta os botões ao novo gerador PRO
+document.getElementById('btnExportFinancePDF').onclick = async () => {
+    const monthVal = document.getElementById('financeMonth').value;
+    await window.exportToPDFPRO('printFinanceArea', `Folha_Consolidada_${monthVal}.pdf`);
+};
+
+document.getElementById('btnExportIndividualPDF').onclick = async () => {
+    const nome = globalIndData.profName.replace(/\s+/g, '_');
+    const mes = document.getElementById('financeMonth').value;
+    await window.exportToPDFPRO('printIndividualFinanceArea', `Extrato_${nome}_${mes}.pdf`);
 };
