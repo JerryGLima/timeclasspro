@@ -531,6 +531,7 @@ document.getElementById('btnSaveFullSchedule').onclick = async () => {
     alert("✅ Grade salva!"); loadAllData();
 };
 
+// --- FUNÇÕES CORRIGIDAS E INTEGRADAS ---
 document.getElementById('btnCopyPublicLink').onclick = () => {
     const gid = document.getElementById('selectGrade').value; 
     if(!gid) return alert("Selecione uma turma primeiro!");
@@ -542,7 +543,64 @@ document.getElementById('btnCopyPublicLink').onclick = () => {
 document.getElementById('btnExportPdfAdmin').onclick = async () => {
     const gid = document.getElementById('selectGrade').value; 
     if(!gid) return alert("Selecione uma turma primeiro!");
-    await window.exportToPDFPRO('printAreaAdmin', `Horario_Turma.pdf`);
+    
+    const grade = gradeMap[gid];
+    const container = document.getElementById('timetableContainer');
+    const header = document.getElementById('headerGradeAdmin');
+    
+    document.getElementById('viewGradeAdmin').textContent = grade.name;
+    document.getElementById('viewCourseAdmin').textContent = grade.courseName;
+    document.getElementById('schoolLogoPrint').src = grade.logoUrl || "";
+    
+    const tableClone = container.querySelector('table').cloneNode(true);
+    const selects = container.querySelectorAll('select');
+    
+    let selIdx = 0;
+    tableClone.querySelectorAll('tr').forEach((tr) => {
+        if(tr.classList.contains('intervalo-row')) return;
+        tr.querySelectorAll('td').forEach((td, colIdx) => {
+            if(colIdx === 0) return;
+            const val = selects[selIdx].value; 
+            td.innerHTML = "";
+            if(val) {
+                const [tId, sId] = val.split('|');
+                const sub = subjectMap[sId];
+                td.innerHTML = `<div style="background:${sub?.color || '#6366f1'}; color:white; font-weight:700; border-radius:6px; height:26px; display:flex; align-items:center; justify-content:center; text-align:center; padding:2px; font-size:0.55rem; white-space: nowrap; overflow: hidden;">${sub?.name || 'Aula'}</div>`;
+            } else {
+                td.innerHTML = `<div style="background:#f8fafc; border-radius:8px; border: 1px dashed #e2e8f0; height:26px;"></div>`;
+            }
+            selIdx++;
+        });
+    });
+    
+    tableClone.querySelectorAll('.time-column').forEach(el => { 
+        el.style.height = "26px"; 
+        el.style.fontSize = "0.55rem"; 
+        el.style.width = "85px"; 
+    });
+    
+    const pw = document.createElement('div'); 
+    pw.style.padding = "10px"; 
+    pw.style.backgroundColor = "white";
+    
+    const clonedHeader = header.cloneNode(true); 
+    clonedHeader.style.display = "block";
+    
+    pw.appendChild(clonedHeader);
+    pw.appendChild(tableClone);
+    
+    const foot = document.createElement('div');
+    foot.innerHTML = `<p style="text-align:center; font-size:0.45rem; color:#94a3b8; margin-top:2px; border-top:1px solid #eee; padding-top:1px">Direitos reservados a Jerry Gleydison &copy; ${new Date().getFullYear()}</p>`;
+    pw.appendChild(foot);
+    
+    html2pdf().set({ 
+        margin: [10, 10, 10, 10], 
+        filename: `Horario_${grade.name}.pdf`, 
+        image: { type: 'jpeg', quality: 1 }, 
+        html2canvas: { scale: 3, backgroundColor: '#ffffff', useCORS: true }, 
+        jsPDF: { unit: 'mm', format: [210, 147.5], orientation: 'landscape' },
+        pagebreak: { mode: ['css', 'legacy'] }
+    }).from(pw).save();
 };
 
 window.del = async (c, i) => { 
@@ -578,7 +636,7 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
     const teachersData = {};
     Object.values(teacherMap).forEach(t => { teachersData[t.id] = { name: t.name, previstas: 0, dadas: 0, substituido: 0 }; });
 
-    // Mapear quem é o titular de cada aula
+    // Mapear quem é o titular de cada aula para saber quem perdeu a aula numa substituição
     const schedMap = {};
     const sSnap = await getDocs(query(collection(db, "schedules"), where("schoolId", "==", schoolId)));
     sSnap.forEach(d => {
@@ -591,9 +649,11 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
     attSnap.forEach(d => {
         const att = d.data();
         if (att.date && att.date.startsWith(monthVal)) {
+            // Professor que efetivamente deu a aula
             if (teachersData[att.teacherId]) {
                 teachersData[att.teacherId].dadas++;
             }
+            // Se foi substituição, vamos creditar a "falta coberta" para o titular original
             if (att.isSubstitution) {
                 const [y, m, dayOfMonth] = att.date.split('-').map(Number);
                 const dateObj = new Date(y, m - 1, dayOfMonth);
@@ -627,7 +687,7 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
             const faltas = Math.max(0, p.previstas - p.dadas);
             const pct = p.previstas > 0 ? ((p.dadas / p.previstas) * 100).toFixed(1) : 100;
             const totalProf = p.dadas * valorHora;
-            const desconto = p.substituido * valorHora;
+            const desconto = p.substituido * valorHora; // Valor informativo negativo
             totalGeral += totalProf;
             
             let pctColor = pct >= 90 ? '#10b981' : (pct >= 70 ? '#f59e0b' : '#ef4444');
@@ -652,6 +712,15 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
     document.getElementById('finSchoolNamePrint').textContent = globalSchoolName;
     document.getElementById('finMonthLabelPrint').textContent = `Referência: ${monthVal.split('-').reverse().join('/')}`;
     document.getElementById('btnExportFinancePDF').classList.remove('hidden');
+};
+
+document.getElementById('btnExportFinancePDF').onclick = () => {
+    const monthVal = document.getElementById('financeMonth').value;
+    html2pdf().set({
+        margin: [15, 15, 15, 15], filename: `Folha_Consolidada_${monthVal}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    }).from(document.getElementById('printFinanceArea')).save();
 };
 
 
@@ -702,7 +771,7 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     let contPrevistas = 0;
     let contDadas = 0;
     let contFaltas = 0;
-    let contSubstituido = 0; 
+    let contSubstituido = 0; // Quantas aulas outro prof cobriu
     let recordsFound = 0;
 
     for (let i = 1; i <= daysInMonth; i++) {
@@ -711,6 +780,7 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
         const dayName = daysWeek[dateObj.getDay()];
 
         const expectedToday = mySchedules.filter(s => s.day === dayName);
+        // Substituições feitas por ele no lugar de outra pessoa
         const substitutionsDoneToday = allAtt.filter(a => a.date === dateStr && a.teacherId === profId && a.isSubstitution);
 
         expectedToday.forEach(exp => {
@@ -727,6 +797,7 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
                 statusBadge = `<span style="background: #dcfce7; color: #10b981; padding: 3px 8px; border-radius: 4px; font-weight: 700;">✅ Presente</span>`;
             } else {
                 contFaltas++;
+                // Outro professor cobriu essa aula que era dele?
                 const foiSubstituido = allAtt.find(a => a.date === dateStr && a.gradeId === exp.gradeId && a.period === exp.period && a.isSubstitution);
                 if (foiSubstituido) {
                     contSubstituido++;
@@ -761,29 +832,33 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     }
 
     if(recordsFound === 0) {
-        htmlTable += `<tr><td colspan=\"6\" style=\"padding: 20px; text-align: center; color: #94a3b8;\">Nenhum registro encontrado no período.</td></tr>`;
+        htmlTable += `<tr><td colspan="6" style="padding: 20px; text-align: center; color: #94a3b8;">Nenhum registro encontrado no período.</td></tr>`;
     }
     htmlTable += `</tbody></table>`;
+    document.getElementById('indTableContainer').innerHTML = htmlTable;
 
     const totalFinanceiro = contDadas * valorHora;
     const descontoFinanceiro = contSubstituido * valorHora;
 
-    // A MÁGICA: Embutimos o resumo de volta direto no container, garantindo que ele sempre exista!
+    // Gerando o quadro de resumo financeiro atualizado
     const resumoHtml = `
-        <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
-            <table style="width: 380px; border-collapse: collapse; font-size: 0.9rem; border: 2px solid #cbd5e1;">
-                <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600;">Aulas Previstas</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">${contPrevistas}</td></tr>
-                <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#ef4444;">Faltas (Total)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#ef4444;">${contFaltas}</td></tr>
-                <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#ea580c;">Cobertas por Substituto</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#ea580c; font-weight:bold;">${contSubstituido}</td></tr>
-                <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#10b981;">Aulas Ministradas/Subst.</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#10b981; font-weight:bold;">${contDadas}</td></tr>
-                <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600;">Valor Hora/Aula</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">R$ ${valorHora.toFixed(2).replace('.', ',')}</td></tr>
-                <tr style="background: #fee2e2;"><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#b91c1c;">Desconto (Substituições)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#b91c1c; font-weight:bold;">- R$ ${descontoFinanceiro.toFixed(2).replace('.', ',')}</td></tr>
-                <tr style="background: #eef2ff;"><td style="padding:12px 8px; font-weight:800; color:#4338ca;">TOTAL A RECEBER</td><td style="padding:12px 8px; text-align:right; font-weight:800; font-size:1.1rem; color:#4338ca;">R$ ${totalFinanceiro.toFixed(2).replace('.', ',')}</td></tr>
-            </table>
-        </div>
+        <table style="width: 380px; border-collapse: collapse; font-size: 0.9rem; border: 2px solid #cbd5e1;">
+            <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600;">Aulas Previstas</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">${contPrevistas}</td></tr>
+            <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#ef4444;">Faltas (Total)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#ef4444;">${contFaltas}</td></tr>
+            <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#ea580c;">Cobertas por Substituto</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#ea580c; font-weight:bold;">${contSubstituido}</td></tr>
+            <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#10b981;">Aulas Ministradas/Subst.</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#10b981; font-weight:bold;">${contDadas}</td></tr>
+            <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600;">Valor Hora/Aula</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">R$ ${valorHora.toFixed(2).replace('.', ',')}</td></tr>
+            <tr style="background: #fee2e2;"><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#b91c1c;">Desconto (Substituições)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#b91c1c; font-weight:bold;">- R$ ${descontoFinanceiro.toFixed(2).replace('.', ',')}</td></tr>
+            <tr style="background: #eef2ff;"><td style="padding:12px 8px; font-weight:800; color:#4338ca;">TOTAL A RECEBER</td><td style="padding:12px 8px; text-align:right; font-weight:800; font-size:1.1rem; color:#4338ca;">R$ ${totalFinanceiro.toFixed(2).replace('.', ',')}</td></tr>
+        </table>
     `;
     
-    document.getElementById('indTableContainer').innerHTML = htmlTable + resumoHtml;
+    // Substitui a div do resumo antigo pela nova estrutura renderizada pelo JS
+    const summaryContainer = document.getElementById('indSumTotal')?.closest('table')?.parentElement;
+    if (summaryContainer) {
+        summaryContainer.innerHTML = resumoHtml;
+    }
+
     document.getElementById('individualActions').classList.remove("hidden");
 
     globalIndData = {
@@ -797,61 +872,22 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     };
 };
 
+document.getElementById('btnExportIndividualPDF').onclick = () => {
+    const area = document.getElementById('printIndividualFinanceArea');
+    const nome = globalIndData.profName.replace(/\s+/g, '_');
+    const mes = document.getElementById('financeMonth').value;
+    
+    html2pdf().set({
+        margin: [15, 15, 15, 15],
+        filename: `Extrato_${nome}_${mes}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    }).from(area).save();
+};
+
 document.getElementById('btnSendWhatsAppIndividual').onclick = () => {
     const msg = `*Relatório Financeiro - TimeClass Pro*\n\nOlá, prof. *${globalIndData.profName}*.\nSegue o resumo do seu extrato referente a *${globalIndData.mes}*:\n\n✅ *Aulas Ministradas:* ${globalIndData.dadas}\n❌ *Faltas Totais:* ${globalIndData.faltas}\n🔄 *Aulas Cobertas por Outro:* ${globalIndData.substituidas}\n📉 *Desconto Estimado (Substituições):* - R$ ${globalIndData.desconto}\n\n💰 *Total a Receber:* R$ ${globalIndData.total}\n\nA direção possui o PDF detalhado disponível para assinatura.`;
     const link = `https://wa.me/?text=${encodeURIComponent(msg)}`;
     window.open(link, '_blank');
-};
-
-
-// ============================================================================
-// --- SOLUÇÃO PRO E DEFINITIVA: GERADOR DE PDF VIRTUAL ---
-// ============================================================================
-
-window.exportToPDFPRO = async (elementId, filename) => {
-    const el = document.getElementById(elementId);
-    if(!el) return;
-
-    // Proteções de quebra de página
-    el.querySelectorAll('tr, tfoot, .signature-line').forEach(node => node.style.pageBreakInside = 'avoid');
-    
-    // Armazena os estilos originais para podermos desfazer depois
-    const originalCSS = el.style.cssText; 
-    
-    // MÁGICA: Força a largura na tela ativa, evitando que o CSS Mobile/Responsivo esprema a tabela
-    el.style.width = '800px';
-    el.style.maxWidth = '800px';
-    el.style.padding = '20px';
-    el.style.background = 'white';
-
-    const opt = {
-        margin: [15, 15, 15, 15],
-        filename: filename,
-        image: { type: 'jpeg', quality: 1 },
-        // windowWidth avisa a biblioteca qual deve ser o tamanho da janela de renderização
-        html2canvas: { scale: 2, useCORS: true, windowWidth: 800 }, 
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'] }
-    };
-
-    // Gera o PDF a partir do elemento visível (nunca fica em branco)
-    html2pdf().set(opt).from(el).save().then(() => {
-        // Restaura a visualização normal e fluída pro usuário assim que o download iniciar
-        el.style.cssText = originalCSS;
-    }).catch(err => {
-        console.error("Erro no PDF:", err);
-        el.style.cssText = originalCSS;
-    });
-};
-
-// Conecta os botões ao gerador blindado
-document.getElementById('btnExportFinancePDF').onclick = async () => {
-    const monthVal = document.getElementById('financeMonth').value;
-    await window.exportToPDFPRO('printFinanceArea', `Folha_Consolidada_${monthVal}.pdf`);
-};
-
-document.getElementById('btnExportIndividualPDF').onclick = async () => {
-    const nome = globalIndData.profName.replace(/\s+/g, '_');
-    const mes = document.getElementById('financeMonth').value;
-    await window.exportToPDFPRO('printIndividualFinanceArea', `Extrato_${nome}_${mes}.pdf`);
 };
