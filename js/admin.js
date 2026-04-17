@@ -281,7 +281,7 @@ document.getElementById('btnSaveConfig').onclick = async () => {
     if(!gradeName) return alert("Preencha o nome!");
     let logo = editId ? (gradeMap[editId]?.logoUrl || "") : "";
     if (document.getElementById('schoolLogoInput').files[0]) logo = await compressImageToBase64(document.getElementById('schoolLogoInput').files[0]);
-    const payload = { name: gradeName, courseName: document.getElementById('courseName').value, startTime: document.getElementById('startTime').value, lessonDuration: parseInt(document.getElementById('lessonDuration').value), intervalAfter: parseInt(document.getElementById('intervalAfter').value), intervalDuration: parseInt(document.getElementById('intervalDuration').value), logoUrl: logo, schoolId };
+    const payload = { name: gradeName, courseName: document.getElementById('courseName').value || "Padrão", startTime: document.getElementById('startTime').value, lessonDuration: parseInt(document.getElementById('lessonDuration').value), intervalAfter: parseInt(document.getElementById('intervalAfter').value), intervalDuration: parseInt(document.getElementById('intervalDuration').value), logoUrl: logo, schoolId };
     if(editId) await setDoc(doc(db, "grades", editId), payload);
     else await addDoc(collection(db, "grades"), payload);
     location.reload();
@@ -408,6 +408,19 @@ async function loadAllData() {
             allGrades = dataArray; gC = dataArray; 
             dataArray.forEach(d => gradeMap[d.id] = d);
             
+            const uniqueCourses = [...new Set(dataArray.map(g => g.courseName))].filter(Boolean);
+            const ratesContainer = document.getElementById('ratesContainer');
+            if (ratesContainer) {
+                ratesContainer.innerHTML = '';
+                if (uniqueCourses.length === 0) {
+                    ratesContainer.innerHTML = `<div class="input-group" style="margin: 0; width: 140px;"><label>Valor H/A (R$)</label><input type="number" class="course-rate-input" data-course="Padrão" value="20" step="0.5"></div>`;
+                } else {
+                    uniqueCourses.forEach(course => {
+                        ratesContainer.innerHTML += `<div class="input-group" style="margin: 0; width: 160px;"><label>Vlr. ${course} (R$)</label><input type="number" class="course-rate-input" data-course="${course}" value="20" step="0.5"></div>`;
+                    });
+                }
+            }
+
             ['freqGradeFilter', 'subGradeSearch'].forEach(id => {
                 const el = document.getElementById(id);
                 if(el) { el.innerHTML = '<option value="">Selecione...</option>'; dataArray.forEach(g => el.innerHTML += `<option value="${g.id}">${g.name}</option>`); }
@@ -430,7 +443,7 @@ async function loadAllData() {
             dataArray.forEach(data => {
                 let htmlItem = `<li><div>`;
                 if(col === 'subjects') htmlItem += `<span class='subject-color-tag' style='background:${data.color}'></span>${data.name}`;
-                else if(col === 'grades') htmlItem += `<strong>${data.name}</strong> (${data.courseName})`;
+                else if(col === 'grades') htmlItem += `<strong>${data.name}</strong> (${data.courseName || 'Padrão'})`;
                 else if(col === 'teachers') {
                     const mats = data.vinculos ? data.vinculos.map(v => v.subName).join(', ') : '-';
                     htmlItem += `<strong>${data.name}</strong> <span style="font-size:0.7rem; background:#e0e7ff; padding:2px 6px; border-radius:4px; margin-left:8px">${workload[data.id] || 0} aulas</span><br><small>${mats}</small>`;
@@ -472,7 +485,7 @@ function processDashboardInt(teachers, grades, schedules, workload) {
     });
 }
 
-// --- GERADOR DE HORÁRIO --- 
+// --- GERADOR DE HORÁRIO E PDF DA GRADE (ADMIN) ---
 document.getElementById('selectGrade').onchange = (e) => { if(e.target.value) renderTimetable(e.target.value); };
 
 async function renderTimetable(gradeId) {
@@ -541,6 +554,7 @@ document.getElementById('btnCopyPublicLink').onclick = () => {
     alert("🔗 Link da turma copiado com sucesso!");
 };
 
+// 🟢 CORREÇÃO: Lógica original restaurada para PDF perfeito e colorido em MODO PAISAGEM
 document.getElementById('btnExportPdfAdmin').onclick = async () => {
     const gid = document.getElementById('selectGrade').value; 
     if(!gid) return alert("Selecione uma turma primeiro!");
@@ -550,7 +564,7 @@ document.getElementById('btnExportPdfAdmin').onclick = async () => {
     const header = document.getElementById('headerGradeAdmin');
     
     document.getElementById('viewGradeAdmin').textContent = grade.name;
-    document.getElementById('viewCourseAdmin').textContent = grade.courseName;
+    document.getElementById('viewCourseAdmin').textContent = grade.courseName || "Padrão";
     document.getElementById('schoolLogoPrint').src = grade.logoUrl || "";
     
     const tableClone = container.querySelector('table').cloneNode(true);
@@ -615,14 +629,21 @@ window.prepareEditProfessor = (id) => window.editProfessor(id);
 
 
 // ============================================================================
-// --- FINANCEIRO 1: RELATÓRIO CONSOLIDADO (GERAL) ---
+// --- FINANCEIRO INTELIGENTE: RELATÓRIO CONSOLIDADO (GERAL) ---
 // ============================================================================
 document.getElementById('btnGenerateFinanceReport').onclick = async () => {
     const monthVal = document.getElementById('financeMonth').value;
-    const valorHora = parseFloat(document.getElementById('valorHoraAula').value || 0);
-
     if (!monthVal) return alert("⚠️ Por favor, selecione um mês!");
-    if (valorHora <= 0) return alert("⚠️ Informe um valor válido para a Hora/Aula!");
+
+    const rates = {};
+    let hasInvalidRate = false;
+    document.querySelectorAll('.course-rate-input').forEach(input => {
+        const val = parseFloat(input.value);
+        if(isNaN(val) || val <= 0) hasInvalidRate = true;
+        rates[input.dataset.course] = val;
+    });
+
+    if (hasInvalidRate) return alert("⚠️ Informe valores válidos para TODAS as taxas dos Cursos!");
     
     const container = document.getElementById('financeResultContainer');
     container.innerHTML = "<p style='text-align:center;'>Calculando dados e cruzando substituições na memória...</p>";
@@ -636,7 +657,7 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
 
     const teachersData = {};
     Object.values(teacherMap).forEach(t => { 
-        teachersData[t.id] = { name: t.name, previstas: 0, dadas: 0, substituido: 0 }; 
+        teachersData[t.id] = { name: t.name, previstas: 0, dadas: 0, substituido: 0, totalGanho: 0, totalDesconto: 0 }; 
     });
 
     const schedMap = {};
@@ -654,8 +675,12 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
     const allAtt = attSnap.docs.map(d => d.data()).filter(a => a.date && a.date.startsWith(monthVal));
 
     allAtt.forEach(att => {
+        const courseName = gradeMap[att.gradeId]?.courseName || "Padrão";
+        const rate = rates[courseName] || 0;
+
         if (teachersData[att.teacherId]) {
             teachersData[att.teacherId].dadas++;
+            teachersData[att.teacherId].totalGanho += rate;
         }
         if (att.isSubstitution) {
             const [y, m, dayOfMonth] = att.date.split('-').map(Number);
@@ -665,6 +690,7 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
             
             if (titularId && titularId !== att.teacherId && teachersData[titularId]) {
                 teachersData[titularId].substituido++;
+                teachersData[titularId].totalDesconto += rate;
             }
         }
     });
@@ -683,14 +709,12 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
             </tr>
         </thead><tbody>`;
     
-    let totalGeral = 0;
+    let totalGeralPagar = 0;
     Object.values(teachersData).sort((a,b) => a.name.localeCompare(b.name)).forEach(p => {
         if (p.previstas > 0 || p.dadas > 0) {
             const faltas = Math.max(0, p.previstas - p.dadas);
             const pct = p.previstas > 0 ? ((p.dadas / p.previstas) * 100).toFixed(1) : 100;
-            const totalProf = p.dadas * valorHora;
-            const desconto = p.substituido * valorHora;
-            totalGeral += totalProf;
+            totalGeralPagar += p.totalGanho;
             
             let pctColor = pct >= 90 ? '#10b981' : (pct >= 70 ? '#f59e0b' : '#ef4444');
 
@@ -701,13 +725,13 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
                 <td style="padding: 10px; text-align: center; color: #ef4444;">${faltas}</td>
                 <td style="padding: 10px; text-align: center; color: #f97316; font-weight: bold;">${p.substituido}</td>
                 <td style="padding: 10px; text-align: center; color: ${pctColor}; font-weight: bold;">${pct}%</td>
-                <td style="padding: 10px; text-align: right; font-weight: bold; color: #ef4444;">- R$ ${desconto.toFixed(2).replace('.', ',')}</td>
-                <td style="padding: 10px; text-align: right; font-weight: bold; color: #10b981;">R$ ${totalProf.toFixed(2).replace('.', ',')}</td>
+                <td style="padding: 10px; text-align: right; font-weight: bold; color: #ef4444;">- R$ ${p.totalDesconto.toFixed(2).replace('.', ',')}</td>
+                <td style="padding: 10px; text-align: right; font-weight: bold; color: #10b981;">R$ ${p.totalGanho.toFixed(2).replace('.', ',')}</td>
             </tr>`;
         }
     });
 
-    html += `</tbody><tfoot><tr style="background: #e0e7ff; font-weight: 800;"><td colspan="7" style="padding: 12px; text-align: right;">TOTAL DA FOLHA:</td><td style="padding: 12px; text-align: right; color: #4f46e5;">R$ ${totalGeral.toFixed(2).replace('.', ',')}</td></tr></tfoot></table>`;
+    html += `</tbody><tfoot><tr style="background: #e0e7ff; font-weight: 800;"><td colspan="7" style="padding: 12px; text-align: right;">TOTAL DA FOLHA:</td><td style="padding: 12px; text-align: right; color: #4f46e5;">R$ ${totalGeralPagar.toFixed(2).replace('.', ',')}</td></tr></tfoot></table>`;
     
     container.innerHTML = html;
     document.getElementById('headerFinancePrint').style.display = 'block';
@@ -718,16 +742,25 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
 
 
 // ============================================================================
-// --- FINANCEIRO 2: RELATÓRIO INDIVIDUAL DETALHADO (CORREÇÃO DA CACHE) ---
+// --- FINANCEIRO INTELIGENTE 2: RELATÓRIO INDIVIDUAL COM DETALHAMENTO ---
 // ============================================================================
 let globalIndData = {};
 
 document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     const profId = document.getElementById('financeTeacherSelect').value;
     const monthVal = document.getElementById('financeMonth').value;
-    const valorHora = parseFloat(document.getElementById('valorHoraAula').value || 0);
 
-    if (!profId || !monthVal || valorHora <= 0) return alert("⚠️ Selecione o professor, o mês e o valor da hora/aula!");
+    if (!profId || !monthVal) return alert("⚠️ Selecione o professor e o mês!");
+
+    const rates = {};
+    let hasInvalidRate = false;
+    document.querySelectorAll('.course-rate-input').forEach(input => {
+        const val = parseFloat(input.value);
+        if(isNaN(val) || val <= 0) hasInvalidRate = true;
+        rates[input.dataset.course] = val;
+    });
+
+    if (hasInvalidRate) return alert("⚠️ Informe valores válidos para TODAS as taxas dos Cursos!");
 
     const professor = teacherMap[profId];
     document.getElementById('indTableContainer').innerHTML = "<p style='text-align:center;'>Buscando e cruzando frequência diária na memória...</p>";
@@ -742,7 +775,6 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     const daysInMonth = new Date(year, month, 0).getDate();
     const daysWeek = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 
-    // Busca protegida contra erros de índice duplo no Firebase
     const sSnap = await getDocs(query(collection(db, "schedules"), where("schoolId", "==", schoolId)));
     const mySchedules = sSnap.docs.map(d => d.data()).filter(s => s.teacherId === profId);
 
@@ -767,6 +799,11 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     let contFaltas = 0;
     let contSubstituido = 0; 
     let recordsFound = 0;
+    let totalFinanceiro = 0;
+    let descontoFinanceiro = 0;
+
+    const dadasPorCurso = {};
+    const descontosPorCurso = {};
 
     for (let i = 1; i <= daysInMonth; i++) {
         const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
@@ -779,6 +816,8 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
         expectedToday.forEach(exp => {
             contPrevistas++;
             const tName = gradeMap[exp.gradeId]?.name || "Turma";
+            const courseName = gradeMap[exp.gradeId]?.courseName || "Padrão";
+            const rate = rates[courseName] || 0;
             const sName = subjectMap[exp.subjectId]?.sigla || "Matéria";
             
             const wasPresent = allAtt.find(a => a.date === dateStr && a.gradeId === exp.gradeId && a.period === exp.period && a.teacherId === profId);
@@ -787,12 +826,16 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
             
             if (wasPresent) {
                 contDadas++;
+                dadasPorCurso[courseName] = (dadasPorCurso[courseName] || 0) + 1;
+                totalFinanceiro += rate;
                 statusBadge = `<span style="background: #dcfce7; color: #10b981; padding: 3px 8px; border-radius: 4px; font-weight: 700;">✅ Presente</span>`;
             } else {
                 contFaltas++;
                 const foiSubstituido = allAtt.find(a => a.date === dateStr && a.gradeId === exp.gradeId && a.period === exp.period && a.isSubstitution);
                 if (foiSubstituido && foiSubstituido.teacherId !== profId) {
                     contSubstituido++;
+                    descontosPorCurso[courseName] = (descontosPorCurso[courseName] || 0) + 1;
+                    descontoFinanceiro += rate;
                     statusBadge = `<span style="background: #ffedd5; color: #ea580c; padding: 3px 8px; border-radius: 4px; font-weight: 700;">⚠️ Coberto por outro</span>`;
                 }
             }
@@ -801,7 +844,7 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
             htmlTable += `<tr style="border-bottom: 1px solid #f1f5f9;">
                 <td style="padding: 8px;">${String(i).padStart(2, '0')}/${String(month).padStart(2, '0')}</td>
                 <td style="padding: 8px;">${dayName}</td>
-                <td style="padding: 8px;">${tName}</td>
+                <td style="padding: 8px;">${tName} <small style="color:#64748b;">(${courseName})</small></td>
                 <td style="padding: 8px;">${sName}</td>
                 <td style="padding: 8px; text-align: center;">${exp.period}º</td>
                 <td style="padding: 8px; text-align: center;">${statusBadge}</td>
@@ -811,11 +854,17 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
         substitutionsDoneToday.forEach(sub => {
             contDadas++;
             const tName = gradeMap[sub.gradeId]?.name || "Turma";
+            const courseName = gradeMap[sub.gradeId]?.courseName || "Padrão";
+            const rate = rates[courseName] || 0;
+
+            dadasPorCurso[courseName] = (dadasPorCurso[courseName] || 0) + 1;
+            totalFinanceiro += rate;
+
             recordsFound++;
             htmlTable += `<tr style="border-bottom: 1px solid #f1f5f9; background: #eef2ff;">
                 <td style="padding: 8px;">${String(i).padStart(2, '0')}/${String(month).padStart(2, '0')}</td>
                 <td style="padding: 8px;">${dayName}</td>
-                <td style="padding: 8px;">${tName}</td>
+                <td style="padding: 8px;">${tName} <small style="color:#64748b;">(${courseName})</small></td>
                 <td style="padding: 8px;">Substituição Extra</td>
                 <td style="padding: 8px; text-align: center;">${sub.period}º</td>
                 <td style="padding: 8px; text-align: center;"><span style="background: #e0e7ff; color: #4338ca; padding: 3px 8px; border-radius: 4px; font-weight: 700;">🔄 Cobrindo outro prof.</span></td>
@@ -828,28 +877,41 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     }
     htmlTable += `</tbody></table>`;
 
-    const totalFinanceiro = contDadas * valorHora;
-    const descontoFinanceiro = contSubstituido * valorHora;
+    // Constrói os blocos detalhados por Curso
+    let breakdownDadasHtml = '';
+    for(const c in dadasPorCurso) {
+        const rate = rates[c] || 0;
+        breakdownDadasHtml += `<tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#10b981; padding-left:20px;">└ ${c} (${dadasPorCurso[c]} aulas)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#10b981;">+ R$ ${(dadasPorCurso[c] * rate).toFixed(2).replace('.', ',')}</td></tr>`;
+    }
 
-    // Constrói o novo bloco de resumo do zero garantindo que não se perca na troca de professores
+    let breakdownDescontoHtml = '';
+    if(contSubstituido > 0) {
+        for(const c in descontosPorCurso) {
+             const rate = rates[c] || 0;
+             breakdownDescontoHtml += `<tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#b91c1c; padding-left:20px;">└ ${c} (${descontosPorCurso[c]} aulas)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#b91c1c;">- R$ ${(descontosPorCurso[c] * rate).toFixed(2).replace('.', ',')}</td></tr>`;
+        }
+    }
+
+    // Injeta a Nova Tabela de Resumo Inteligente
     const resumoHtml = `
         <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
-            <table style="width: 380px; border-collapse: collapse; font-size: 0.9rem; border: 2px solid #cbd5e1;">
-                <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600;">Aulas Previstas</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">${contPrevistas}</td></tr>
+            <table style="width: 420px; border-collapse: collapse; font-size: 0.9rem; border: 2px solid #cbd5e1;">
+                <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600;">Aulas Previstas (Mês)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">${contPrevistas}</td></tr>
                 <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#ef4444;">Faltas (Total)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#ef4444;">${contFaltas}</td></tr>
-                <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#ea580c;">Cobertas por Substituto</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#ea580c; font-weight:bold;">${contSubstituido}</td></tr>
-                <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#10b981;">Aulas Ministradas/Subst.</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#10b981; font-weight:bold;">${contDadas}</td></tr>
-                <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600;">Valor Hora/Aula</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">R$ ${valorHora.toFixed(2).replace('.', ',')}</td></tr>
-                <tr style="background: #fee2e2;"><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#b91c1c;">Desconto (Substituições)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#b91c1c; font-weight:bold;">- R$ ${descontoFinanceiro.toFixed(2).replace('.', ',')}</td></tr>
-                <tr style="background: #eef2ff;"><td style="padding:12px 8px; font-weight:800; color:#4338ca;">TOTAL A RECEBER</td><td style="padding:12px 8px; text-align:right; font-weight:800; font-size:1.1rem; color:#4338ca;">R$ ${totalFinanceiro.toFixed(2).replace('.', ',')}</td></tr>
+                
+                <tr><td style="padding:10px 8px; font-weight:800; color:#10b981; background:#f0fdf4; border-top:2px solid #cbd5e1;" colspan="2">🟢 RESUMO DE GANHOS (Aulas dadas)</td></tr>
+                ${breakdownDadasHtml || `<tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; padding-left:20px; color:#64748b;">Nenhuma aula registrada</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">R$ 0,00</td></tr>`}
+                
+                <tr><td style="padding:10px 8px; font-weight:800; color:#b91c1c; background:#fef2f2; border-top:2px solid #cbd5e1;" colspan="2">🔴 RESUMO DE DESCONTOS (Substituído)</td></tr>
+                ${breakdownDescontoHtml || `<tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; padding-left:20px; color:#64748b;">Nenhum desconto</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">R$ 0,00</td></tr>`}
+
+                <tr style="background: #eef2ff; border-top: 2px solid #cbd5e1;"><td style="padding:12px 8px; font-weight:800; color:#4338ca;">TOTAL A RECEBER</td><td style="padding:12px 8px; text-align:right; font-weight:800; font-size:1.2rem; color:#4338ca;">R$ ${totalFinanceiro.toFixed(2).replace('.', ',')}</td></tr>
             </table>
         </div>
     `;
     
-    // Injeta tudo diretamente no container, eliminando bugs de substituição paralela
     document.getElementById('indTableContainer').innerHTML = htmlTable + resumoHtml;
 
-    // Oculta a tabela fixa de resumo antiga que fica sobrando no HTML original do usuário
     const oldSummary = document.getElementById('indSumPrevistas');
     if (oldSummary) {
         const oldDiv = oldSummary.closest('div');
@@ -858,10 +920,13 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
 
     document.getElementById('individualActions').classList.remove("hidden");
 
+    const cursosTexto = Object.entries(dadasPorCurso).map(([c, q]) => `🎓 *${c}*: ${q} aulas`).join('\n');
+
     globalIndData = {
         profName: professor.name,
         mes: document.getElementById('indMonth').textContent,
         dadas: contDadas,
+        cursosTexto: cursosTexto || "Nenhuma aula registrada",
         faltas: contFaltas,
         substituidas: contSubstituido,
         desconto: descontoFinanceiro.toFixed(2).replace('.', ','),
@@ -870,51 +935,56 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
 };
 
 document.getElementById('btnSendWhatsAppIndividual').onclick = () => {
-    const msg = `*Relatório Financeiro - TimeClass Pro*\n\nOlá, prof. *${globalIndData.profName}*.\nSegue o resumo do seu extrato referente a *${globalIndData.mes}*:\n\n✅ *Aulas Ministradas:* ${globalIndData.dadas}\n❌ *Faltas Totais:* ${globalIndData.faltas}\n🔄 *Aulas Cobertas por Outro:* ${globalIndData.substituidas}\n📉 *Desconto Estimado (Substituições):* - R$ ${globalIndData.desconto}\n\n💰 *Total a Receber:* R$ ${globalIndData.total}\n\nA direção possui o PDF detalhado disponível para assinatura.`;
+    const msg = `*Relatório Financeiro - TimeClass Pro*\n\nOlá, prof. *${globalIndData.profName}*.\nSegue o resumo do seu extrato referente a *${globalIndData.mes}*:\n\n✅ *Aulas Ministradas (Total: ${globalIndData.dadas})*\n${globalIndData.cursosTexto}\n\n❌ *Faltas Totais:* ${globalIndData.faltas}\n🔄 *Aulas Cobertas por Outro:* ${globalIndData.substituidas}\n📉 *Desconto (Substituições):* - R$ ${globalIndData.desconto}\n\n💰 *Total a Receber:* R$ ${globalIndData.total}\n\nA direção possui o PDF detalhado disponível para assinatura.`;
     const link = `https://wa.me/?text=${encodeURIComponent(msg)}`;
     window.open(link, '_blank');
 };
 
-// ============================================================================
-// --- GERADOR DE PDF VIRTUAL PRO (PROTEGE CONTRA CORTES) ---
-// ============================================================================
-
-window.exportToPDFPRO = async (elementId, filename) => {
+// 🟢 CORREÇÃO: GERADOR PDF FINANCEIRO COM PROTEÇÃO CONTRA CORTES (EM PÉ / RETRATO)
+window.exportFinancePDF = async (elementId, filename) => {
     const el = document.getElementById(elementId);
     if(!el) return;
 
-    el.querySelectorAll('tr, tfoot, .signature-line').forEach(node => node.style.pageBreakInside = 'avoid');
-    const originalCSS = el.style.cssText; 
+    el.querySelectorAll('tr, tfoot, .signature-line, table').forEach(node => node.style.pageBreakInside = 'avoid');
     
-    el.style.width = '800px';
-    el.style.maxWidth = '800px';
-    el.style.padding = '20px';
-    el.style.background = 'white';
+    const originalWidth = el.style.width;
+    const originalMaxWidth = el.style.maxWidth;
+    const originalMargin = el.style.margin;
+    
+    // Força a área do PDF a ter a largura exata de um A4 (evita cortar e evita sair em branco)
+    el.style.width = '790px';
+    el.style.maxWidth = '790px';
+    el.style.margin = '0 auto';
 
     const opt = {
-        margin: [15, 15, 15, 15],
+        margin: [10, 10, 10, 10],
         filename: filename,
-        image: { type: 'jpeg', quality: 1 },
-        html2canvas: { scale: 2, useCORS: true, windowWidth: 800 }, 
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true }, 
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
         pagebreak: { mode: ['css', 'legacy'] }
     };
 
-    html2pdf().set(opt).from(el).save().then(() => {
-        el.style.cssText = originalCSS;
-    }).catch(err => {
+    try {
+        await html2pdf().set(opt).from(el).save();
+    } catch(err) {
         console.error("Erro no PDF:", err);
-        el.style.cssText = originalCSS;
-    });
+        alert("Houve um erro na geração do PDF.");
+    } finally {
+        // Restaura a tela ao normal
+        el.style.width = originalWidth;
+        el.style.maxWidth = originalMaxWidth;
+        el.style.margin = originalMargin;
+    }
 };
 
 document.getElementById('btnExportFinancePDF').onclick = async () => {
     const monthVal = document.getElementById('financeMonth').value;
-    await window.exportToPDFPRO('printFinanceArea', `Folha_Consolidada_${monthVal}.pdf`);
+    await window.exportFinancePDF('printFinanceArea', `Folha_Consolidada_${monthVal}.pdf`);
 };
 
 document.getElementById('btnExportIndividualPDF').onclick = async () => {
     const nome = globalIndData.profName.replace(/\s+/g, '_');
     const mes = document.getElementById('financeMonth').value;
-    await window.exportToPDFPRO('printIndividualFinanceArea', `Extrato_${nome}_${mes}.pdf`);
+    await window.exportFinancePDF('printIndividualFinanceArea', `Extrato_${nome}_${mes}.pdf`);
 };
