@@ -369,7 +369,7 @@ window.redefinirSenha = async (email, name) => {
     } catch(e) { alert("Erro: " + e.message); }
 };
 
-// --- CARREGAMENTO GERAL ---
+// --- CARREGAMENTO GERAL E INJEÇÃO DOS CURSOS ---
 async function loadSchoolInfo() {
     const docSnap = await getDoc(doc(db, "schools", schoolId));
     if (docSnap.exists()) {
@@ -408,6 +408,7 @@ async function loadAllData() {
             allGrades = dataArray; gC = dataArray; 
             dataArray.forEach(d => gradeMap[d.id] = d);
             
+            // Lógica para detectar cursos diferentes e gerar as caixinhas de valor
             const uniqueCourses = [...new Set(dataArray.map(g => g.courseName))].filter(Boolean);
             const ratesContainer = document.getElementById('ratesContainer');
             if (ratesContainer) {
@@ -485,7 +486,7 @@ function processDashboardInt(teachers, grades, schedules, workload) {
     });
 }
 
-// --- GERADOR DE HORÁRIO E PDF DA GRADE (ADMIN) ---
+// --- GERADOR DE HORÁRIO --- 
 document.getElementById('selectGrade').onchange = (e) => { if(e.target.value) renderTimetable(e.target.value); };
 
 async function renderTimetable(gradeId) {
@@ -554,7 +555,6 @@ document.getElementById('btnCopyPublicLink').onclick = () => {
     alert("🔗 Link da turma copiado com sucesso!");
 };
 
-// 🟢 CORREÇÃO: Lógica original restaurada para PDF perfeito e colorido em MODO PAISAGEM
 document.getElementById('btnExportPdfAdmin').onclick = async () => {
     const gid = document.getElementById('selectGrade').value; 
     if(!gid) return alert("Selecione uma turma primeiro!");
@@ -731,7 +731,7 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
         }
     });
 
-    html += `</tbody><tfoot><tr style="background: #e0e7ff; font-weight: 800;"><td colspan="7" style="padding: 12px; text-align: right;">TOTAL DA FOLHA:</td><td style="padding: 12px; text-align: right; color: #4f46e5;">R$ ${totalGeralPagar.toFixed(2).replace('.', ',')}</td></tr></tfoot></table>`;
+    html += `</tbody><tfoot style="page-break-inside: avoid;"><tr style="background: #e0e7ff; font-weight: 800;"><td colspan="7" style="padding: 12px; text-align: right;">TOTAL DA FOLHA:</td><td style="padding: 12px; text-align: right; color: #4f46e5;">R$ ${totalGeralPagar.toFixed(2).replace('.', ',')}</td></tr></tfoot></table>`;
     
     container.innerHTML = html;
     document.getElementById('headerFinancePrint').style.display = 'block';
@@ -739,7 +739,6 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
     document.getElementById('finMonthLabelPrint').textContent = `Referência: ${monthVal.split('-').reverse().join('/')}`;
     document.getElementById('btnExportFinancePDF').classList.remove('hidden');
 };
-
 
 // ============================================================================
 // --- FINANCEIRO INTELIGENTE 2: RELATÓRIO INDIVIDUAL COM DETALHAMENTO ---
@@ -881,23 +880,23 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     let breakdownDadasHtml = '';
     for(const c in dadasPorCurso) {
         const rate = rates[c] || 0;
-        breakdownDadasHtml += `<tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#10b981; padding-left:20px;">└ ${c} (${dadasPorCurso[c]} aulas)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#10b981;">+ R$ ${(dadasPorCurso[c] * rate).toFixed(2).replace('.', ',')}</td></tr>`;
+        breakdownDadasHtml += `<tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#10b981; padding-left:20px;">└ ${c} (${dadasPorCurso[c]} aulas x R$ ${rate.toFixed(2).replace('.', ',')})</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#10b981; font-weight:bold;">+ R$ ${(dadasPorCurso[c] * rate).toFixed(2).replace('.', ',')}</td></tr>`;
     }
 
     let breakdownDescontoHtml = '';
     if(contSubstituido > 0) {
         for(const c in descontosPorCurso) {
              const rate = rates[c] || 0;
-             breakdownDescontoHtml += `<tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#b91c1c; padding-left:20px;">└ ${c} (${descontosPorCurso[c]} aulas)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#b91c1c;">- R$ ${(descontosPorCurso[c] * rate).toFixed(2).replace('.', ',')}</td></tr>`;
+             breakdownDescontoHtml += `<tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#b91c1c; padding-left:20px;">└ ${c} (${descontosPorCurso[c]} aulas x R$ ${rate.toFixed(2).replace('.', ',')})</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#b91c1c; font-weight:bold;">- R$ ${(descontosPorCurso[c] * rate).toFixed(2).replace('.', ',')}</td></tr>`;
         }
     }
 
     // Injeta a Nova Tabela de Resumo Inteligente
     const resumoHtml = `
-        <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
+        <div style="display: flex; justify-content: flex-end; margin-top: 20px; page-break-inside: avoid;">
             <table style="width: 420px; border-collapse: collapse; font-size: 0.9rem; border: 2px solid #cbd5e1;">
                 <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600;">Aulas Previstas (Mês)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">${contPrevistas}</td></tr>
-                <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#ef4444;">Faltas (Total)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#ef4444;">${contFaltas}</td></tr>
+                <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#ef4444;">Faltas (Total)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#ef4444; font-weight:bold;">${contFaltas}</td></tr>
                 
                 <tr><td style="padding:10px 8px; font-weight:800; color:#10b981; background:#f0fdf4; border-top:2px solid #cbd5e1;" colspan="2">🟢 RESUMO DE GANHOS (Aulas dadas)</td></tr>
                 ${breakdownDadasHtml || `<tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; padding-left:20px; color:#64748b;">Nenhuma aula registrada</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">R$ 0,00</td></tr>`}
@@ -911,12 +910,6 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     `;
     
     document.getElementById('indTableContainer').innerHTML = htmlTable + resumoHtml;
-
-    const oldSummary = document.getElementById('indSumPrevistas');
-    if (oldSummary) {
-        const oldDiv = oldSummary.closest('div');
-        if (oldDiv) oldDiv.style.display = 'none';
-    }
 
     document.getElementById('individualActions').classList.remove("hidden");
 
@@ -940,7 +933,10 @@ document.getElementById('btnSendWhatsAppIndividual').onclick = () => {
     window.open(link, '_blank');
 };
 
-// 🟢 CORREÇÃO: GERADOR PDF FINANCEIRO COM PROTEÇÃO CONTRA CORTES (EM PÉ / RETRATO)
+// ============================================================================
+// --- FUNÇÕES DE EXPORTAÇÃO PDF ---
+// ============================================================================
+
 window.exportFinancePDF = async (elementId, filename) => {
     const el = document.getElementById(elementId);
     if(!el) return;
