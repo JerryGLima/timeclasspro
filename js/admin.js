@@ -629,11 +629,11 @@ window.prepareEditProfessor = (id) => window.editProfessor(id);
 
 
 // ============================================================================
-// --- FINANCEIRO INTELIGENTE: RELATÓRIO CONSOLIDADO (GERAL) ---
+// --- FINANCEIRO INTELIGENTE: RELATÓRIO CONSOLIDADO (GERAL) COM CICLO ---
 // ============================================================================
 document.getElementById('btnGenerateFinanceReport').onclick = async () => {
-    const monthVal = document.getElementById('financeMonth').value;
-    if (!monthVal) return alert("⚠️ Por favor, selecione um mês!");
+    const endDateVal = document.getElementById('financeEndDate').value;
+    if (!endDateVal) return alert("⚠️ Por favor, selecione a data de fechamento!");
 
     const rates = {};
     let hasInvalidRate = false;
@@ -646,14 +646,26 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
     if (hasInvalidRate) return alert("⚠️ Informe valores válidos para TODAS as taxas dos Cursos!");
     
     const container = document.getElementById('financeResultContainer');
-    container.innerHTML = "<p style='text-align:center;'>Calculando dados e cruzando substituições na memória...</p>";
+    container.innerHTML = "<p style='text-align:center;'>Calculando ciclo de fechamento...</p>";
 
-    const [year, month] = monthVal.split('-').map(Number);
-    const daysInMonth = new Date(year, month, 0).getDate();
-    const dayCounts = { "Domingo": 0, "Segunda": 0, "Terça": 0, "Quarta": 0, "Quinta": 0, "Sexta": 0, "Sábado": 0 };
+    // Lógica do Ciclo: Calcula do dia seguinte (mesmo dia mês anterior) até a data escolhida
+    const endDateObj = new Date(endDateVal + "T12:00:00");
+    const startDateObj = new Date(endDateObj);
+    startDateObj.setMonth(startDateObj.getMonth() - 1);
+    startDateObj.setDate(startDateObj.getDate() + 1);
+
+    const startStr = startDateObj.toISOString().split('T')[0];
+    const endStr = endDateObj.toISOString().split('T')[0];
+
     const daysWeek = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+    const dayCounts = { "Domingo": 0, "Segunda": 0, "Terça": 0, "Quarta": 0, "Quinta": 0, "Sexta": 0, "Sábado": 0 };
     
-    for (let i = 1; i <= daysInMonth; i++) dayCounts[daysWeek[new Date(year, month - 1, i).getDay()]]++;
+    // Conta quantos dias da semana existem exatos nesse intervalo
+    let currentCountDate = new Date(startDateObj);
+    while (currentCountDate <= endDateObj) {
+        dayCounts[daysWeek[currentCountDate.getDay()]]++;
+        currentCountDate.setDate(currentCountDate.getDate() + 1);
+    }
 
     const teachersData = {};
     Object.values(teacherMap).forEach(t => { 
@@ -672,7 +684,9 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
     });
 
     const attSnap = await getDocs(query(collection(db, "attendance"), where("schoolId", "==", schoolId)));
-    const allAtt = attSnap.docs.map(d => d.data()).filter(a => a.date && a.date.startsWith(monthVal));
+    
+    // Filtro pelas datas do ciclo
+    const allAtt = attSnap.docs.map(d => d.data()).filter(a => a.date && a.date >= startStr && a.date <= endStr);
 
     allAtt.forEach(att => {
         const courseName = gradeMap[att.gradeId]?.courseName || "Padrão";
@@ -683,8 +697,8 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
             teachersData[att.teacherId].totalGanho += rate;
         }
         if (att.isSubstitution) {
-            const [y, m, dayOfMonth] = att.date.split('-').map(Number);
-            const dateObj = new Date(y, m - 1, dayOfMonth);
+            // Recriar a data para pegar o dia da semana corretamente na substituição
+            const dateObj = new Date(att.date + "T12:00:00");
             const dayName = daysWeek[dateObj.getDay()];
             const titularId = schedMap[`${att.gradeId}-${dayName}-${att.period}`];
             
@@ -736,7 +750,7 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
     container.innerHTML = html;
     document.getElementById('headerFinancePrint').style.display = 'block';
     document.getElementById('finSchoolNamePrint').textContent = globalSchoolName;
-    document.getElementById('finMonthLabelPrint').textContent = `Referência: ${monthVal.split('-').reverse().join('/')}`;
+    document.getElementById('finMonthLabelPrint').textContent = `Ciclo: ${startDateObj.toLocaleDateString('pt-BR')} a ${endDateObj.toLocaleDateString('pt-BR')}`;
     document.getElementById('btnExportFinancePDF').classList.remove('hidden');
 };
 
@@ -747,9 +761,9 @@ let globalIndData = {};
 
 document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     const profId = document.getElementById('financeTeacherSelect').value;
-    const monthVal = document.getElementById('financeMonth').value;
+    const endDateVal = document.getElementById('financeEndDate').value;
 
-    if (!profId || !monthVal) return alert("⚠️ Selecione o professor e o mês!");
+    if (!profId || !endDateVal) return alert("⚠️ Selecione o professor e a data de fechamento!");
 
     const rates = {};
     let hasInvalidRate = false;
@@ -762,23 +776,32 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     if (hasInvalidRate) return alert("⚠️ Informe valores válidos para TODAS as taxas dos Cursos!");
 
     const professor = teacherMap[profId];
-    document.getElementById('indTableContainer').innerHTML = "<p style='text-align:center;'>Buscando e cruzando frequência diária na memória...</p>";
+    document.getElementById('indTableContainer').innerHTML = "<p style='text-align:center;'>Montando extrato do ciclo...</p>";
     document.getElementById('printIndividualFinanceArea').style.display = "block";
     document.getElementById('individualActions').classList.add("hidden");
 
+    // Lógica do Ciclo para o Individual
+    const endDateObj = new Date(endDateVal + "T12:00:00");
+    const startDateObj = new Date(endDateObj);
+    startDateObj.setMonth(startDateObj.getMonth() - 1);
+    startDateObj.setDate(startDateObj.getDate() + 1);
+
+    const startStr = startDateObj.toISOString().split('T')[0];
+    const endStr = endDateObj.toISOString().split('T')[0];
+    const cicloLabel = `${startDateObj.toLocaleDateString('pt-BR')} a ${endDateObj.toLocaleDateString('pt-BR')}`;
+
     document.getElementById('indSchoolName').textContent = globalSchoolName;
     document.getElementById('indProfName').textContent = professor.name;
-    document.getElementById('indMonth').textContent = monthVal.split('-').reverse().join('/');
+    document.getElementById('indMonth').textContent = cicloLabel;
 
-    const [year, month] = monthVal.split('-').map(Number);
-    const daysInMonth = new Date(year, month, 0).getDate();
     const daysWeek = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 
     const sSnap = await getDocs(query(collection(db, "schedules"), where("schoolId", "==", schoolId)));
     const mySchedules = sSnap.docs.map(d => d.data()).filter(s => s.teacherId === profId);
 
     const attSnap = await getDocs(query(collection(db, "attendance"), where("schoolId", "==", schoolId)));
-    const allAtt = attSnap.docs.map(d => d.data()).filter(a => a.date && a.date.startsWith(monthVal));
+    // Filtra pelo ciclo
+    const allAtt = attSnap.docs.map(d => d.data()).filter(a => a.date && a.date >= startStr && a.date <= endStr);
 
     let htmlTable = `<table style="width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-bottom: 20px;">
         <thead>
@@ -793,21 +816,18 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
         </thead>
         <tbody>`;
 
-    let contPrevistas = 0;
-    let contDadas = 0;
-    let contFaltas = 0;
-    let contSubstituido = 0; 
-    let recordsFound = 0;
-    let totalFinanceiro = 0;
-    let descontoFinanceiro = 0;
-
+    let contPrevistas = 0, contDadas = 0, contFaltas = 0, contSubstituido = 0, recordsFound = 0, totalFinanceiro = 0, descontoFinanceiro = 0;
     const dadasPorCurso = {};
     const descontosPorCurso = {};
 
-    for (let i = 1; i <= daysInMonth; i++) {
-        const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
-        const dateObj = new Date(year, month - 1, i);
-        const dayName = daysWeek[dateObj.getDay()];
+    // NOVO LOOP: Varre os dias exatos do ciclo
+    let currentLoopDate = new Date(startDateObj);
+
+    while (currentLoopDate <= endDateObj) {
+        const dateStr = currentLoopDate.toISOString().split('T')[0];
+        const dayName = daysWeek[currentLoopDate.getDay()];
+        const iStr = String(currentLoopDate.getDate()).padStart(2, '0');
+        const mStr = String(currentLoopDate.getMonth() + 1).padStart(2, '0');
 
         const expectedToday = mySchedules.filter(s => s.day === dayName);
         const substitutionsDoneToday = allAtt.filter(a => a.date === dateStr && a.teacherId === profId && a.isSubstitution);
@@ -841,7 +861,7 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
 
             recordsFound++;
             htmlTable += `<tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 8px;">${String(i).padStart(2, '0')}/${String(month).padStart(2, '0')}</td>
+                <td style="padding: 8px;">${iStr}/${mStr}</td>
                 <td style="padding: 8px;">${dayName}</td>
                 <td style="padding: 8px;">${tName} <small style="color:#64748b;">(${courseName})</small></td>
                 <td style="padding: 8px;">${sName}</td>
@@ -861,7 +881,7 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
 
             recordsFound++;
             htmlTable += `<tr style="border-bottom: 1px solid #f1f5f9; background: #eef2ff;">
-                <td style="padding: 8px;">${String(i).padStart(2, '0')}/${String(month).padStart(2, '0')}</td>
+                <td style="padding: 8px;">${iStr}/${mStr}</td>
                 <td style="padding: 8px;">${dayName}</td>
                 <td style="padding: 8px;">${tName} <small style="color:#64748b;">(${courseName})</small></td>
                 <td style="padding: 8px;">Substituição Extra</td>
@@ -869,6 +889,8 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
                 <td style="padding: 8px; text-align: center;"><span style="background: #e0e7ff; color: #4338ca; padding: 3px 8px; border-radius: 4px; font-weight: 700;">🔄 Cobrindo outro prof.</span></td>
             </tr>`;
         });
+
+        currentLoopDate.setDate(currentLoopDate.getDate() + 1);
     }
 
     if(recordsFound === 0) {
@@ -895,7 +917,7 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     const resumoHtml = `
         <div style="display: flex; justify-content: flex-end; margin-top: 20px; page-break-inside: avoid;">
             <table style="width: 420px; border-collapse: collapse; font-size: 0.9rem; border: 2px solid #cbd5e1;">
-                <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600;">Aulas Previstas (Mês)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">${contPrevistas}</td></tr>
+                <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600;">Aulas Previstas (Ciclo)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">${contPrevistas}</td></tr>
                 <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#ef4444;">Faltas (Total)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#ef4444; font-weight:bold;">${contFaltas}</td></tr>
                 
                 <tr><td style="padding:10px 8px; font-weight:800; color:#10b981; background:#f0fdf4; border-top:2px solid #cbd5e1;" colspan="2">🟢 RESUMO DE GANHOS (Aulas dadas)</td></tr>
@@ -928,7 +950,7 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
 };
 
 document.getElementById('btnSendWhatsAppIndividual').onclick = () => {
-    const msg = `*Relatório Financeiro - TimeClass Pro*\n\nOlá, prof. *${globalIndData.profName}*.\nSegue o resumo do seu extrato referente a *${globalIndData.mes}*:\n\n✅ *Aulas Ministradas (Total: ${globalIndData.dadas})*\n${globalIndData.cursosTexto}\n\n❌ *Faltas Totais:* ${globalIndData.faltas}\n🔄 *Aulas Cobertas por Outro:* ${globalIndData.substituidas}\n📉 *Desconto (Substituições):* - R$ ${globalIndData.desconto}\n\n💰 *Total a Receber:* R$ ${globalIndData.total}\n\nA direção possui o PDF detalhado disponível para assinatura.`;
+    const msg = `*Relatório Financeiro - TimeClass Pro*\n\nOlá, prof. *${globalIndData.profName}*.\nSegue o resumo do seu extrato referente ao ciclo *${globalIndData.mes}*:\n\n✅ *Aulas Ministradas (Total: ${globalIndData.dadas})*\n${globalIndData.cursosTexto}\n\n❌ *Faltas Totais:* ${globalIndData.faltas}\n🔄 *Aulas Cobertas por Outro:* ${globalIndData.substituidas}\n📉 *Desconto (Substituições):* - R$ ${globalIndData.desconto}\n\n💰 *Total a Receber:* R$ ${globalIndData.total}\n\nA direção possui o PDF detalhado disponível para assinatura.`;
     const link = `https://wa.me/?text=${encodeURIComponent(msg)}`;
     window.open(link, '_blank');
 };
@@ -975,12 +997,12 @@ window.exportFinancePDF = async (elementId, filename) => {
 };
 
 document.getElementById('btnExportFinancePDF').onclick = async () => {
-    const monthVal = document.getElementById('financeMonth').value;
-    await window.exportFinancePDF('printFinanceArea', `Folha_Consolidada_${monthVal}.pdf`);
+    const endDateVal = document.getElementById('financeEndDate').value;
+    await window.exportFinancePDF('printFinanceArea', `Folha_Consolidada_${endDateVal}.pdf`);
 };
 
 document.getElementById('btnExportIndividualPDF').onclick = async () => {
     const nome = globalIndData.profName.replace(/\s+/g, '_');
-    const mes = document.getElementById('financeMonth').value;
-    await window.exportFinancePDF('printIndividualFinanceArea', `Extrato_${nome}_${mes}.pdf`);
+    const endDateVal = document.getElementById('financeEndDate').value;
+    await window.exportFinancePDF('printIndividualFinanceArea', `Extrato_${nome}_${endDateVal}.pdf`);
 };
