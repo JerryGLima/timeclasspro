@@ -947,9 +947,9 @@ window.exportFinancePDF = async (elementId, filename) => {
     const originalMaxWidth = el.style.maxWidth;
     const originalMargin = el.style.margin;
     
-    // Força a área do PDF a ter a largura exata de um A4 (evita cortar e evita sair em branco)
-    el.style.width = '790px';
-    el.style.maxWidth = '790px';
+    // Ajuste para evitar corte na borda direita e caber na folha A4
+    el.style.width = '720px';
+    el.style.maxWidth = '720px';
     el.style.margin = '0 auto';
 
     const opt = {
