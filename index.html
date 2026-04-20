@@ -2,32 +2,101 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TimeClass PRO - Gestão Escolar Inteligente</title>
-    <link rel="stylesheet" href="css/index.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
+    <title>Convite Maria Elis | 8 Anos</title>
+
+    <!-- META TAGS PARA O CARD NO WHATSAPP -->
+    <meta property="og:title" content="Convite Maria Elis - 8 Anos 💖">
+    <meta property="og:description" content="Você é meu convidado especial! Toque para abrir.">
+    <meta property="og:image" content="logo.png">
+    <meta property="og:type" content="website">
+
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Pacifico&family=Poppins:wght@400;600;800&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="main-wrapper">
-        <div class="blob"></div>
-        <div class="blob2"></div>
 
-        <div class="glass-card">
-            <img src="imagem/IMG-20260407-WA0005.jpg" class="brand-logo" alt="Logo TimeClass Pro">
+    <!-- TELA DE ENTRADA CORRIGIDA -->
+    <div id="overlay">
+        <!-- Personagens posicionados nas quinas -->
+        <img src="foto1.png" class="char-intro char-t-l">
+        <img src="foto2.png" class="char-intro char-t-r">
+        <img src="foto3.png" class="char-intro char-b-l">
+        <img src="foto4.png" class="char-intro char-b-r">
+
+        <div class="intro-content">
+            <div class="logo-intro-wrapper">
+                <img src="logo.png" alt="Logo Maria Elis" class="logo-intro jelly-anim">
+            </div>
             
-            <h1 class="main-title"><span>TimeClass Pro</span></h1>
-            <h2 class="subtitle">Gestão de Horários Escolares</h2>
-            
-            <p class="description">
-                Otimize o tempo da sua instituição com a geração inteligente de grades curriculares, controle de frequência e relatórios financeiros.
-            </p>
-            
-            <a href="login.html" class="btn-main">Acessar o Sistema</a>
-            
-            <footer>
-                &copy; Direitos reservados a Jerry Gleydison - Março 2026
-            </footer>
+            <div class="cta-area">
+                <p class="click-aviso">Toque para entrar com música 🎵</p>
+                <button id="btn-abrir">ABRIR CONVITE 💖</button>
+            </div>
         </div>
     </div>
+
+    <audio id="musica" src="fine.mp3" loop preload="auto"></audio>
+
+    <div class="main-wrapper">
+        <header class="section reveal">
+            <div class="logo-container">
+                <img src="logo.png" alt="Logo" class="logo-topo pulse">
+            </div>
+            <div class="trio-fotos">
+                <div class="moldura lateral f-left"><img src="foto2.png"></div>
+                <div class="moldura principal wiggle"><img src="foto1.png"></div>
+                <div class="moldura lateral f-right"><img src="foto3.png"></div>
+            </div>
+            <h1 class="titulo-script">Minha Festa Doce</h1>
+            <p class="subtitulo">Você é meu convidado especial!</p>
+        </header>
+
+        <section class="section reveal">
+            <div class="card-glass">
+                <h2 class="card-titulo">QUANDO E ONDE?</h2>
+                <div class="info-row">
+                    <div class="info-item">
+                        <span class="emoji-anim">📅</span>
+                        <p><strong>15 de Outubro</strong><br>Sábado</p>
+                    </div>
+                    <div class="info-item">
+                        <span class="emoji-anim">⏰</span>
+                        <p><strong>15:30h</strong><br>Horário</p>
+                    </div>
+                </div>
+                <div class="local-box">
+                    <span class="emoji-anim">📍</span>
+                    <p><strong>Colégio Elicéu</strong><br>Rua Coronel João Sena, 323 - Centro</p>
+                </div>
+                <div class="button-group">
+                    <a href="https://www.google.com/maps/search/?api=1&query=Colégio+Elicéu+Rua+Colonel+João+Sena+323+Centro" class="btn btn-mapa">VER NO GPS 📍</a>
+                    <a href="https://wa.me/5500000000000?text=Confirmamos+presença!" class="btn btn-confirmar">CONFIRMAR ✅</a>
+                </div>
+            </div>
+        </section>
+
+        <section class="section reveal">
+            <div class="card-glass pink-border">
+                <h2 class="card-titulo">SUGESTÃO DE PRESENTES</h2>
+                <div class="presentes-lista">
+                    <p>👗 Roupa: Tam 8 ou 10</p>
+                    <p>👟 Calçado: Tam 32</p>
+                    <p>🎁 Brinquedos e Mimos</p>
+                </div>
+            </div>
+        </section>
+
+        <footer class="section reveal">
+            <div class="chars-footer">
+                <img src="foto4.png" class="char-move">
+                <img src="foto5.png" class="char-move delay">
+            </div>
+            <p class="assinatura">Esperamos por você!</p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
 </body>
 </html>
