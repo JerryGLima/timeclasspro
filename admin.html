@@ -155,8 +155,26 @@
             </section>
 
             <section id="sec-freq" class="admin-section hidden">
-                <div class="section-header"><h2>📍 Controle de Presença (Ponto Digital)</h2></div>
+                <div class="section-header"><h2>📍 Controle de Presença e Atestados</h2></div>
+                
+                <div class="card" style="margin-bottom: 20px; border-left: 4px solid #3b82f6; background: #eff6ff;">
+                    <h3 style="color: #1d4ed8; margin-bottom: 15px;">🏥 Registrar Atestado Médico</h3>
+                    <p style="font-size: 0.8rem; color: #475569; margin-bottom: 15px;">O professor não sofrerá descontos no fechamento e o substituto será pago normalmente.</p>
+                    <div style="display:grid; grid-template-columns:1fr 1fr auto; gap:15px; align-items: flex-end;">
+                        <div class="input-group" style="margin: 0;">
+                            <label>Professor Afastado</label>
+                            <select id="atestadoTeacherSelect"><option value="">Aguardando professores...</option></select>
+                        </div>
+                        <div class="input-group" style="margin: 0;">
+                            <label>Data do Atestado</label>
+                            <input type="date" id="atestadoDate">
+                        </div>
+                        <button class="btn-primary" id="btnSaveAtestado" style="background:#3b82f6; height: 42px;">Salvar Atestado</button>
+                    </div>
+                </div>
+
                 <div class="card">
+                    <h3 style="margin-bottom: 15px;">Ponto Digital Diário</h3>
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:20px">
                         <div class="input-group"><label>Filtrar Data</label><input type="date" id="freqDate"></div>
                         <div class="input-group"><label>Filtrar Turma</label><select id="freqGradeFilter"><option value="">Todas as turmas</option></select></div>
