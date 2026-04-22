@@ -70,6 +70,9 @@ function initNavigation() {
 
     document.getElementById('freqDate').onchange = () => loadAttendance();
     document.getElementById('freqGradeFilter').onchange = () => loadAttendance();
+
+    const btnAtestado = document.getElementById('btnSaveAtestado');
+    if(btnAtestado) btnAtestado.onclick = saveAtestado;
 }
 
 function initFinanceTabs() {
@@ -88,10 +91,33 @@ function initFinanceTabs() {
     };
 }
 
+// --- GESTÃO DE ATESTADOS ---
+async function saveAtestado() {
+    const tId = document.getElementById('atestadoTeacherSelect').value;
+    const date = document.getElementById('atestadoDate').value;
+    
+    if(!tId || !date) return alert("⚠️ Selecione o professor e a data do afastamento.");
+    
+    if(!confirm(`Confirmar registro de atestado para ${teacherMap[tId].name} no dia ${date.split('-').reverse().join('/')}?`)) return;
+
+    try {
+        await addDoc(collection(db, "atestados"), {
+            schoolId,
+            teacherId: tId,
+            date: date,
+            timestamp: new Date().toISOString()
+        });
+        alert("🏥 Atestado registrado com sucesso! O professor receberá por este dia normalmente.");
+        document.getElementById('atestadoDate').value = "";
+    } catch (e) {
+        alert("Erro ao salvar atestado: " + e.message);
+    }
+}
+
 // --- MONITOR EM TEMPO REAL ---
 function startLiveMonitor() { 
     updateLiveMonitor(); 
-    setInterval(updateLiveMonitor, 3000000); 
+    setInterval(updateLiveMonitor, 3000000); // 50 minutos
 
     const btnRefresh = document.getElementById('btnRefreshMonitor');
     if (btnRefresh) {
@@ -408,7 +434,6 @@ async function loadAllData() {
             allGrades = dataArray; gC = dataArray; 
             dataArray.forEach(d => gradeMap[d.id] = d);
             
-            // Lógica para detectar cursos diferentes e gerar as caixinhas de valor
             const uniqueCourses = [...new Set(dataArray.map(g => g.courseName))].filter(Boolean);
             const ratesContainer = document.getElementById('ratesContainer');
             if (ratesContainer) {
@@ -431,11 +456,15 @@ async function loadAllData() {
             dataArray.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')); 
             tC = dataArray; 
             dataArray.forEach(d => teacherMap[d.id] = d);
+            
             const selFin = document.getElementById('financeTeacherSelect');
-            if(selFin) {
-                selFin.innerHTML = '<option value="">Selecione o Professor</option>';
-                dataArray.forEach(t => selFin.innerHTML += `<option value="${t.id}">${t.name}</option>`);
-            }
+            const selAtest = document.getElementById('atestadoTeacherSelect');
+            [selFin, selAtest].forEach(sel => {
+                if(sel) {
+                    sel.innerHTML = '<option value="">Selecione o Professor</option>';
+                    dataArray.forEach(t => sel.innerHTML += `<option value="${t.id}">${t.name}</option>`);
+                }
+            });
         }
         
         const list = document.getElementById(col === 'subjects' ? 'listSubjects' : (col === 'grades' ? 'listGrades' : 'listProfessors'));
@@ -629,371 +658,303 @@ window.prepareEditProfessor = (id) => window.editProfessor(id);
 
 
 // ============================================================================
-// --- FINANCEIRO INTELIGENTE: RELATÓRIO CONSOLIDADO (GERAL) COM CICLO ---
+// --- FINANCEIRO INTELIGENTE: RELATÓRIO CONSOLIDADO COM CICLO E ATESTADO ---
 // ============================================================================
 document.getElementById('btnGenerateFinanceReport').onclick = async () => {
-    const endDateVal = document.getElementById('financeEndDate').value;
-    if (!endDateVal) return alert("⚠️ Por favor, selecione a data de fechamento!");
+    try {
+        const endDateVal = document.getElementById('financeEndDate').value;
+        if (!endDateVal) return alert("⚠️ Selecione a data de fechamento!");
 
-    const rates = {};
-    let hasInvalidRate = false;
-    document.querySelectorAll('.course-rate-input').forEach(input => {
-        const val = parseFloat(input.value);
-        if(isNaN(val) || val <= 0) hasInvalidRate = true;
-        rates[input.dataset.course] = val;
-    });
+        const rates = {};
+        document.querySelectorAll('.course-rate-input').forEach(input => { rates[input.dataset.course] = parseFloat(input.value) || 0; });
 
-    if (hasInvalidRate) return alert("⚠️ Informe valores válidos para TODAS as taxas dos Cursos!");
-    
-    const container = document.getElementById('financeResultContainer');
-    container.innerHTML = "<p style='text-align:center;'>Calculando ciclo de fechamento...</p>";
+        const endDateObj = new Date(endDateVal + "T12:00:00");
+        const startDateObj = new Date(endDateObj);
+        startDateObj.setMonth(startDateObj.getMonth() - 1);
+        startDateObj.setDate(startDateObj.getDate() + 1);
 
-    // Lógica do Ciclo: Calcula do dia seguinte (mesmo dia mês anterior) até a data escolhida
-    const endDateObj = new Date(endDateVal + "T12:00:00");
-    const startDateObj = new Date(endDateObj);
-    startDateObj.setMonth(startDateObj.getMonth() - 1);
-    startDateObj.setDate(startDateObj.getDate() + 1);
+        // Travando fuso horário
+        const startY = startDateObj.getFullYear(), startM = String(startDateObj.getMonth() + 1).padStart(2, '0'), startD = String(startDateObj.getDate()).padStart(2, '0');
+        const endY = endDateObj.getFullYear(), endM = String(endDateObj.getMonth() + 1).padStart(2, '0'), endD = String(endDateObj.getDate()).padStart(2, '0');
+        const startStr = `${startY}-${startM}-${startD}`;
+        const endStr = `${endY}-${endM}-${endD}`;
 
-    const startStr = startDateObj.toISOString().split('T')[0];
-    const endStr = endDateObj.toISOString().split('T')[0];
-
-    const daysWeek = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
-    const dayCounts = { "Domingo": 0, "Segunda": 0, "Terça": 0, "Quarta": 0, "Quinta": 0, "Sexta": 0, "Sábado": 0 };
-    
-    // Conta quantos dias da semana existem exatos nesse intervalo
-    let currentCountDate = new Date(startDateObj);
-    while (currentCountDate <= endDateObj) {
-        dayCounts[daysWeek[currentCountDate.getDay()]]++;
-        currentCountDate.setDate(currentCountDate.getDate() + 1);
-    }
-
-    const teachersData = {};
-    Object.values(teacherMap).forEach(t => { 
-        teachersData[t.id] = { name: t.name, previstas: 0, dadas: 0, substituido: 0, totalGanho: 0, totalDesconto: 0 }; 
-    });
-
-    const schedMap = {};
-    const sSnap = await getDocs(query(collection(db, "schedules"), where("schoolId", "==", schoolId)));
-    const allSchedules = sSnap.docs.map(d => d.data());
-    
-    allSchedules.forEach(s => {
-        schedMap[`${s.gradeId}-${s.day}-${s.period}`] = s.teacherId;
-        if (teachersData[s.teacherId] && dayCounts[s.day]) {
-            teachersData[s.teacherId].previstas += dayCounts[s.day];
+        const daysWeek = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+        const dayCounts = { "Domingo": 0, "Segunda": 0, "Terça": 0, "Quarta": 0, "Quinta": 0, "Sexta": 0, "Sábado": 0 };
+        
+        let currentCountDate = new Date(startDateObj);
+        while (currentCountDate <= endDateObj) {
+            dayCounts[daysWeek[currentCountDate.getDay()]]++;
+            currentCountDate.setDate(currentCountDate.getDate() + 1);
         }
-    });
 
-    const attSnap = await getDocs(query(collection(db, "attendance"), where("schoolId", "==", schoolId)));
-    
-    // Filtro pelas datas do ciclo
-    const allAtt = attSnap.docs.map(d => d.data()).filter(a => a.date && a.date >= startStr && a.date <= endStr);
+        const teachersData = {};
+        Object.values(teacherMap).forEach(t => { 
+            teachersData[t.id] = { name: t.name, previstas: 0, dadas: 0, substituido: 0, atestados: 0, totalGanho: 0, totalDesconto: 0 }; 
+        });
 
-    allAtt.forEach(att => {
-        const courseName = gradeMap[att.gradeId]?.courseName || "Padrão";
-        const rate = rates[courseName] || 0;
+        const schedMap = {};
+        const sSnap = await getDocs(query(collection(db, "schedules"), where("schoolId", "==", schoolId)));
+        sSnap.docs.forEach(d => {
+            const s = d.data();
+            schedMap[`${s.gradeId}-${s.day}-${s.period}`] = s.teacherId;
+            if (teachersData[s.teacherId]) teachersData[s.teacherId].previstas += dayCounts[s.day];
+        });
 
-        if (teachersData[att.teacherId]) {
-            teachersData[att.teacherId].dadas++;
-            teachersData[att.teacherId].totalGanho += rate;
-        }
-        if (att.isSubstitution) {
-            // Recriar a data para pegar o dia da semana corretamente na substituição
-            const dateObj = new Date(att.date + "T12:00:00");
-            const dayName = daysWeek[dateObj.getDay()];
-            const titularId = schedMap[`${att.gradeId}-${dayName}-${att.period}`];
-            
-            if (titularId && titularId !== att.teacherId && teachersData[titularId]) {
-                teachersData[titularId].substituido++;
-                teachersData[titularId].totalDesconto += rate;
+        const attSnap = await getDocs(query(collection(db, "attendance"), where("schoolId", "==", schoolId)));
+        const allAtt = attSnap.docs.map(d => d.data()).filter(a => a.date >= startStr && a.date <= endStr);
+
+        const medicalSnap = await getDocs(query(collection(db, "atestados"), where("schoolId", "==", schoolId)));
+        const allMedical = medicalSnap.docs.map(d => d.data()).filter(m => m.date >= startStr && m.date <= endStr);
+
+        allAtt.forEach(att => {
+            const courseName = gradeMap[att.gradeId]?.courseName || "Padrão";
+            const rate = rates[courseName] !== undefined ? rates[courseName] : (rates["Padrão"] || 0);
+
+            if (teachersData[att.teacherId]) {
+                teachersData[att.teacherId].dadas++;
+                teachersData[att.teacherId].totalGanho += rate;
             }
-        }
-    });
-
-    let html = `<table style="width:100%; border-collapse: collapse; margin-top: 15px; font-size: 0.85rem;">
-        <thead>
-            <tr style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
-                <th style="padding: 12px; text-align: left;">Professor</th>
-                <th style="padding: 12px; text-align: center;">Previstas</th>
-                <th style="padding: 12px; text-align: center;">Dadas</th>
-                <th style="padding: 12px; text-align: center;">Faltas</th>
-                <th style="padding: 12px; text-align: center;">Subst.</th>
-                <th style="padding: 12px; text-align: center;">% Freq.</th>
-                <th style="padding: 12px; text-align: right;">Desconto (-)</th>
-                <th style="padding: 12px; text-align: right;">A Receber</th>
-            </tr>
-        </thead><tbody>`;
-    
-    let totalGeralPagar = 0;
-    Object.values(teachersData).sort((a,b) => a.name.localeCompare(b.name)).forEach(p => {
-        if (p.previstas > 0 || p.dadas > 0) {
-            const faltas = Math.max(0, p.previstas - p.dadas);
-            const pct = p.previstas > 0 ? ((p.dadas / p.previstas) * 100).toFixed(1) : 100;
-            totalGeralPagar += p.totalGanho;
-            
-            let pctColor = pct >= 90 ? '#10b981' : (pct >= 70 ? '#f59e0b' : '#ef4444');
-
-            html += `<tr style="border-bottom: 1px solid #e2e8f0;">
-                <td style="padding: 10px;">${p.name}</td>
-                <td style="padding: 10px; text-align: center;">${p.previstas}</td>
-                <td style="padding: 10px; text-align: center; font-weight: bold;">${p.dadas}</td>
-                <td style="padding: 10px; text-align: center; color: #ef4444;">${faltas}</td>
-                <td style="padding: 10px; text-align: center; color: #f97316; font-weight: bold;">${p.substituido}</td>
-                <td style="padding: 10px; text-align: center; color: ${pctColor}; font-weight: bold;">${pct}%</td>
-                <td style="padding: 10px; text-align: right; font-weight: bold; color: #ef4444;">- R$ ${p.totalDesconto.toFixed(2).replace('.', ',')}</td>
-                <td style="padding: 10px; text-align: right; font-weight: bold; color: #10b981;">R$ ${p.totalGanho.toFixed(2).replace('.', ',')}</td>
-            </tr>`;
-        }
-    });
-
-    html += `</tbody><tfoot style="page-break-inside: avoid;"><tr style="background: #e0e7ff; font-weight: 800;"><td colspan="7" style="padding: 12px; text-align: right;">TOTAL DA FOLHA:</td><td style="padding: 12px; text-align: right; color: #4f46e5;">R$ ${totalGeralPagar.toFixed(2).replace('.', ',')}</td></tr></tfoot></table>`;
-    
-    container.innerHTML = html;
-    document.getElementById('headerFinancePrint').style.display = 'block';
-    document.getElementById('finSchoolNamePrint').textContent = globalSchoolName;
-    document.getElementById('finMonthLabelPrint').textContent = `Ciclo: ${startDateObj.toLocaleDateString('pt-BR')} a ${endDateObj.toLocaleDateString('pt-BR')}`;
-    document.getElementById('btnExportFinancePDF').classList.remove('hidden');
-};
-
-// ============================================================================
-// --- FINANCEIRO INTELIGENTE 2: RELATÓRIO INDIVIDUAL COM DETALHAMENTO ---
-// ============================================================================
-let globalIndData = {};
-
-document.getElementById('btnGenerateIndividualReport').onclick = async () => {
-    const profId = document.getElementById('financeTeacherSelect').value;
-    const endDateVal = document.getElementById('financeEndDate').value;
-
-    if (!profId || !endDateVal) return alert("⚠️ Selecione o professor e a data de fechamento!");
-
-    const rates = {};
-    let hasInvalidRate = false;
-    document.querySelectorAll('.course-rate-input').forEach(input => {
-        const val = parseFloat(input.value);
-        if(isNaN(val) || val <= 0) hasInvalidRate = true;
-        rates[input.dataset.course] = val;
-    });
-
-    if (hasInvalidRate) return alert("⚠️ Informe valores válidos para TODAS as taxas dos Cursos!");
-
-    const professor = teacherMap[profId];
-    document.getElementById('indTableContainer').innerHTML = "<p style='text-align:center;'>Montando extrato do ciclo...</p>";
-    document.getElementById('printIndividualFinanceArea').style.display = "block";
-    document.getElementById('individualActions').classList.add("hidden");
-
-    // Lógica do Ciclo para o Individual
-    const endDateObj = new Date(endDateVal + "T12:00:00");
-    const startDateObj = new Date(endDateObj);
-    startDateObj.setMonth(startDateObj.getMonth() - 1);
-    startDateObj.setDate(startDateObj.getDate() + 1);
-
-    const startStr = startDateObj.toISOString().split('T')[0];
-    const endStr = endDateObj.toISOString().split('T')[0];
-    const cicloLabel = `${startDateObj.toLocaleDateString('pt-BR')} a ${endDateObj.toLocaleDateString('pt-BR')}`;
-
-    document.getElementById('indSchoolName').textContent = globalSchoolName;
-    document.getElementById('indProfName').textContent = professor.name;
-    document.getElementById('indMonth').textContent = cicloLabel;
-
-    const daysWeek = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
-
-    const sSnap = await getDocs(query(collection(db, "schedules"), where("schoolId", "==", schoolId)));
-    const mySchedules = sSnap.docs.map(d => d.data()).filter(s => s.teacherId === profId);
-
-    const attSnap = await getDocs(query(collection(db, "attendance"), where("schoolId", "==", schoolId)));
-    // Filtra pelo ciclo
-    const allAtt = attSnap.docs.map(d => d.data()).filter(a => a.date && a.date >= startStr && a.date <= endStr);
-
-    let htmlTable = `<table style="width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-bottom: 20px;">
-        <thead>
-            <tr style="background: #f8fafc; border-bottom: 2px solid #cbd5e1; color: #475569;">
-                <th style="padding: 8px; text-align: left;">Data</th>
-                <th style="padding: 8px; text-align: left;">Dia</th>
-                <th style="padding: 8px; text-align: left;">Turma</th>
-                <th style="padding: 8px; text-align: left;">Matéria</th>
-                <th style="padding: 8px; text-align: center;">Horário</th>
-                <th style="padding: 8px; text-align: center;">Status</th>
-            </tr>
-        </thead>
-        <tbody>`;
-
-    let contPrevistas = 0, contDadas = 0, contFaltas = 0, contSubstituido = 0, recordsFound = 0, totalFinanceiro = 0, descontoFinanceiro = 0;
-    const dadasPorCurso = {};
-    const descontosPorCurso = {};
-
-    // NOVO LOOP: Varre os dias exatos do ciclo
-    let currentLoopDate = new Date(startDateObj);
-
-    while (currentLoopDate <= endDateObj) {
-        const dateStr = currentLoopDate.toISOString().split('T')[0];
-        const dayName = daysWeek[currentLoopDate.getDay()];
-        const iStr = String(currentLoopDate.getDate()).padStart(2, '0');
-        const mStr = String(currentLoopDate.getMonth() + 1).padStart(2, '0');
-
-        const expectedToday = mySchedules.filter(s => s.day === dayName);
-        const substitutionsDoneToday = allAtt.filter(a => a.date === dateStr && a.teacherId === profId && a.isSubstitution);
-
-        expectedToday.forEach(exp => {
-            contPrevistas++;
-            const tName = gradeMap[exp.gradeId]?.name || "Turma";
-            const courseName = gradeMap[exp.gradeId]?.courseName || "Padrão";
-            const rate = rates[courseName] || 0;
-            const sName = subjectMap[exp.subjectId]?.sigla || "Matéria";
-            
-            const wasPresent = allAtt.find(a => a.date === dateStr && a.gradeId === exp.gradeId && a.period === exp.period && a.teacherId === profId);
-            
-            let statusBadge = `<span style="background: #fee2e2; color: #ef4444; padding: 3px 8px; border-radius: 4px; font-weight: 700;">❌ Falta</span>`;
-            
-            if (wasPresent) {
-                contDadas++;
-                dadasPorCurso[courseName] = (dadasPorCurso[courseName] || 0) + 1;
-                totalFinanceiro += rate;
-                statusBadge = `<span style="background: #dcfce7; color: #10b981; padding: 3px 8px; border-radius: 4px; font-weight: 700;">✅ Presente</span>`;
-            } else {
-                contFaltas++;
-                const foiSubstituido = allAtt.find(a => a.date === dateStr && a.gradeId === exp.gradeId && a.period === exp.period && a.isSubstitution);
-                if (foiSubstituido && foiSubstituido.teacherId !== profId) {
-                    contSubstituido++;
-                    descontosPorCurso[courseName] = (descontosPorCurso[courseName] || 0) + 1;
-                    descontoFinanceiro += rate;
-                    statusBadge = `<span style="background: #ffedd5; color: #ea580c; padding: 3px 8px; border-radius: 4px; font-weight: 700;">⚠️ Coberto por outro</span>`;
+            if (att.isSubstitution) {
+                const dateObj = new Date(att.date + "T12:00:00");
+                const titularId = schedMap[`${att.gradeId}-${daysWeek[dateObj.getDay()]}-${att.period}`];
+                const temAtestado = allMedical.find(m => m.teacherId === titularId && m.date === att.date);
+                if (titularId && titularId !== att.teacherId && teachersData[titularId] && !temAtestado) {
+                    teachersData[titularId].substituido++;
+                    teachersData[titularId].totalDesconto += rate;
                 }
             }
-
-            recordsFound++;
-            htmlTable += `<tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 8px;">${iStr}/${mStr}</td>
-                <td style="padding: 8px;">${dayName}</td>
-                <td style="padding: 8px;">${tName} <small style="color:#64748b;">(${courseName})</small></td>
-                <td style="padding: 8px;">${sName}</td>
-                <td style="padding: 8px; text-align: center;">${exp.period}º</td>
-                <td style="padding: 8px; text-align: center;">${statusBadge}</td>
-            </tr>`;
         });
 
-        substitutionsDoneToday.forEach(sub => {
-            contDadas++;
-            const tName = gradeMap[sub.gradeId]?.name || "Turma";
-            const courseName = gradeMap[sub.gradeId]?.courseName || "Padrão";
-            const rate = rates[courseName] || 0;
-
-            dadasPorCurso[courseName] = (dadasPorCurso[courseName] || 0) + 1;
-            totalFinanceiro += rate;
-
-            recordsFound++;
-            htmlTable += `<tr style="border-bottom: 1px solid #f1f5f9; background: #eef2ff;">
-                <td style="padding: 8px;">${iStr}/${mStr}</td>
-                <td style="padding: 8px;">${dayName}</td>
-                <td style="padding: 8px;">${tName} <small style="color:#64748b;">(${courseName})</small></td>
-                <td style="padding: 8px;">Substituição Extra</td>
-                <td style="padding: 8px; text-align: center;">${sub.period}º</td>
-                <td style="padding: 8px; text-align: center;"><span style="background: #e0e7ff; color: #4338ca; padding: 3px 8px; border-radius: 4px; font-weight: 700;">🔄 Cobrindo outro prof.</span></td>
-            </tr>`;
+        allMedical.forEach(med => {
+            const dayName = daysWeek[new Date(med.date + "T12:00:00").getDay()];
+            const schedsToday = sSnap.docs.map(d => d.data()).filter(s => s.teacherId === med.teacherId && s.day === dayName);
+            
+            schedsToday.forEach(s => {
+                const jaDeuAula = allAtt.find(a => a.date === med.date && a.gradeId === s.gradeId && a.period === s.period && a.teacherId === med.teacherId);
+                if(!jaDeuAula) {
+                    const courseName = gradeMap[s.gradeId]?.courseName || "Padrão";
+                    const rate = rates[courseName] !== undefined ? rates[courseName] : (rates["Padrão"] || 0);
+                    if (teachersData[med.teacherId]) {
+                        teachersData[med.teacherId].atestados++;
+                        teachersData[med.teacherId].totalGanho += rate;
+                    }
+                }
+            });
         });
 
-        currentLoopDate.setDate(currentLoopDate.getDate() + 1);
-    }
+        let html = `<table style="width:100%; border-collapse: collapse; margin-top: 15px; font-size: 0.8rem;">
+            <thead>
+                <tr style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
+                    <th style="padding: 10px; text-align: left;">Professor</th>
+                    <th style="padding: 10px; text-align: center;">Previstas</th>
+                    <th style="padding: 10px; text-align: center;">Aulas/Subst</th>
+                    <th style="padding: 10px; text-align: center;">🏥 Atest</th>
+                    <th style="padding: 10px; text-align: center;">Faltas</th>
+                    <th style="padding: 10px; text-align: right;">Desconto (-)</th>
+                    <th style="padding: 10px; text-align: right;">A Receber</th>
+                </tr>
+            </thead><tbody>`;
+        
+        let totalGeralPagar = 0;
+        Object.values(teachersData).sort((a,b) => a.name.localeCompare(b.name)).forEach(p => {
+            if (p.previstas > 0 || p.dadas > 0 || p.atestados > 0) {
+                const faltas = Math.max(0, p.previstas - (p.dadas + p.atestados));
+                totalGeralPagar += p.totalGanho;
+                html += `<tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 10px;">${p.name}</td>
+                    <td style="padding: 10px; text-align: center;">${p.previstas}</td>
+                    <td style="padding: 10px; text-align: center; font-weight: bold;">${p.dadas}</td>
+                    <td style="padding: 10px; text-align: center; color: #3b82f6;">${p.atestados}</td>
+                    <td style="padding: 10px; text-align: center; color: #ef4444;">${faltas}</td>
+                    <td style="padding: 10px; text-align: right; color: #ef4444;">- R$ ${p.totalDesconto.toFixed(2).replace('.', ',')}</td>
+                    <td style="padding: 10px; text-align: right; font-weight: bold; color: #10b981;">R$ ${p.totalGanho.toFixed(2).replace('.', ',')}</td>
+                </tr>`;
+            }
+        });
 
-    if(recordsFound === 0) {
-        htmlTable += `<tr><td colspan=\"6\" style=\"padding: 20px; text-align: center; color: #94a3b8;\">Nenhum registro encontrado no período.</td></tr>`;
-    }
-    htmlTable += `</tbody></table>`;
+        html += `</tbody><tfoot><tr style="background: #e0e7ff; font-weight: 800;"><td colspan="6" style="padding: 12px; text-align: right;">TOTAL DA FOLHA:</td><td style="padding: 12px; text-align: right; color: #4f46e5;">R$ ${totalGeralPagar.toFixed(2).replace('.', ',')}</td></tr></tfoot></table>`;
+        
+        document.getElementById('financeResultContainer').innerHTML = html;
+        document.getElementById('headerFinancePrint').style.display = 'block';
+        document.getElementById('finSchoolNamePrint').textContent = globalSchoolName;
+        document.getElementById('finMonthLabelPrint').textContent = `Ciclo: ${startDateObj.toLocaleDateString('pt-BR')} a ${endDateObj.toLocaleDateString('pt-BR')}`;
+        document.getElementById('btnExportFinancePDF').classList.remove('hidden');
 
-    // Constrói os blocos detalhados por Curso
-    let breakdownDadasHtml = '';
-    for(const c in dadasPorCurso) {
-        const rate = rates[c] || 0;
-        breakdownDadasHtml += `<tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#10b981; padding-left:20px;">└ ${c} (${dadasPorCurso[c]} aulas x R$ ${rate.toFixed(2).replace('.', ',')})</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#10b981; font-weight:bold;">+ R$ ${(dadasPorCurso[c] * rate).toFixed(2).replace('.', ',')}</td></tr>`;
+    } catch (error) {
+        console.error(error);
+        alert("Erro ao gerar Relatório Consolidado. Verifique os dados.");
     }
+};
 
-    let breakdownDescontoHtml = '';
-    if(contSubstituido > 0) {
-        for(const c in descontosPorCurso) {
-             const rate = rates[c] || 0;
-             breakdownDescontoHtml += `<tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#b91c1c; padding-left:20px;">└ ${c} (${descontosPorCurso[c]} aulas x R$ ${rate.toFixed(2).replace('.', ',')})</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#b91c1c; font-weight:bold;">- R$ ${(descontosPorCurso[c] * rate).toFixed(2).replace('.', ',')}</td></tr>`;
+// --- RELATÓRIO INDIVIDUAL COM DETALHAMENTO DE ATESTADOS (BLINDADO) ---
+let globalIndData = {};
+document.getElementById('btnGenerateIndividualReport').onclick = async () => {
+    try {
+        const profId = document.getElementById('financeTeacherSelect').value;
+        const endDateVal = document.getElementById('financeEndDate').value;
+        if (!profId || !endDateVal) return alert("⚠️ Selecione o professor e a data de fechamento!");
+
+        const rates = {};
+        document.querySelectorAll('.course-rate-input').forEach(input => { rates[input.dataset.course] = parseFloat(input.value) || 0; });
+
+        const professor = teacherMap[profId];
+        const endDateObj = new Date(endDateVal + "T12:00:00");
+        const startDateObj = new Date(endDateObj);
+        startDateObj.setMonth(startDateObj.getMonth() - 1);
+        startDateObj.setDate(startDateObj.getDate() + 1);
+
+        // Tratamento blindado contra Fuso Horário
+        const startY = startDateObj.getFullYear(), startM = String(startDateObj.getMonth() + 1).padStart(2, '0'), startD = String(startDateObj.getDate()).padStart(2, '0');
+        const endY = endDateObj.getFullYear(), endM = String(endDateObj.getMonth() + 1).padStart(2, '0'), endD = String(endDateObj.getDate()).padStart(2, '0');
+        const startStr = `${startY}-${startM}-${startD}`;
+        const endStr = `${endY}-${endM}-${endD}`;
+
+        document.getElementById('indSchoolName').textContent = globalSchoolName;
+        document.getElementById('indProfName').textContent = professor?.name || "Desconhecido";
+        document.getElementById('indMonth').textContent = `${startDateObj.toLocaleDateString('pt-BR')} a ${endDateObj.toLocaleDateString('pt-BR')}`;
+        document.getElementById('indTableContainer').innerHTML = "<p style='text-align:center;'>Buscando e cruzando frequência diária na memória...</p>";
+        document.getElementById('printIndividualFinanceArea').style.display = "block";
+        document.getElementById('individualActions').classList.add("hidden");
+
+        const sSnap = await getDocs(query(collection(db, "schedules"), where("schoolId", "==", schoolId)));
+        const mySchedules = sSnap.docs.map(d => d.data()).filter(s => s.teacherId === profId);
+
+        const attSnap = await getDocs(query(collection(db, "attendance"), where("schoolId", "==", schoolId)));
+        const allAtt = attSnap.docs.map(d => d.data()).filter(a => a.date >= startStr && a.date <= endStr);
+
+        const medicalSnap = await getDocs(query(collection(db, "atestados"), where("schoolId", "==", schoolId)));
+        const myMedical = medicalSnap.docs.map(d => d.data()).filter(m => m.teacherId === profId && m.date >= startStr && m.date <= endStr);
+
+        let htmlTable = `<table style="width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-bottom: 20px;">
+            <thead><tr style="background: #f8fafc; border-bottom: 2px solid #cbd5e1; color: #475569;">
+                <th style="padding: 8px; text-align: left;">Data</th><th style="padding: 8px; text-align: left;">Dia</th><th style="padding: 8px; text-align: left;">Turma</th><th style="padding: 8px; text-align: left;">Matéria</th><th style="padding: 8px; text-align: center;">Status</th>
+            </tr></thead><tbody>`;
+
+        let contPrevistas = 0, contDadas = 0, contFaltas = 0, contAtestado = 0, totalFinanceiro = 0, descontoFinanceiro = 0;
+        const dadasPorCurso = {};
+        const atestadoPorCurso = {};
+
+        let currentLoopDate = new Date(startDateObj);
+        const daysWeek = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+
+        while (currentLoopDate <= endDateObj) {
+            // Tratamento blindado contra Fuso Horário no Loop
+            const y = currentLoopDate.getFullYear();
+            const m = String(currentLoopDate.getMonth() + 1).padStart(2, '0');
+            const d = String(currentLoopDate.getDate()).padStart(2, '0');
+            const dateStr = `${y}-${m}-${d}`;
+            
+            const dayName = daysWeek[currentLoopDate.getDay()];
+            const expectedToday = mySchedules.filter(s => s.day === dayName);
+            const substitutionsDoneToday = allAtt.filter(a => a.date === dateStr && a.teacherId === profId && a.isSubstitution);
+            const temAtestadoHoje = myMedical.find(med => med.date === dateStr);
+
+            expectedToday.forEach(exp => {
+                contPrevistas++;
+                const courseName = gradeMap[exp.gradeId]?.courseName || "Padrão";
+                const rate = rates[courseName] !== undefined ? rates[courseName] : (rates["Padrão"] || 0); // Proteção contra NaN
+                
+                const gradeName = gradeMap[exp.gradeId]?.name || "Excluída";
+                const subName = subjectMap[exp.subjectId]?.sigla || "-";
+                
+                const wasPresent = allAtt.find(a => a.date === dateStr && a.gradeId === exp.gradeId && a.period === exp.period && a.teacherId === profId);
+                
+                let status = `<span style="background: #fee2e2; color: #ef4444; padding: 3px 8px; border-radius: 4px; font-weight: 700;">❌ Falta</span>`;
+                
+                if (wasPresent) {
+                    contDadas++;
+                    dadasPorCurso[courseName] = (dadasPorCurso[courseName] || 0) + 1;
+                    totalFinanceiro += rate;
+                    status = `<span style="background: #dcfce7; color: #10b981; padding: 3px 8px; border-radius: 4px; font-weight: 700;">✅ Presente</span>`;
+                } else if (temAtestadoHoje) {
+                    contAtestado++;
+                    atestadoPorCurso[courseName] = (atestadoPorCurso[courseName] || 0) + 1;
+                    totalFinanceiro += rate;
+                    status = `<span style="background: #e0f2fe; color: #0284c7; padding: 3px 8px; border-radius: 4px; font-weight: 700;">🏥 Atestado</span>`;
+                } else {
+                    contFaltas++;
+                    const foiSubst = allAtt.find(a => a.date === dateStr && a.gradeId === exp.gradeId && a.period === exp.period && a.isSubstitution);
+                    if (foiSubst) {
+                        descontoFinanceiro += rate;
+                        status = `<span style="background: #ffedd5; color: #ea580c; padding: 3px 8px; border-radius: 4px; font-weight: 700;">⚠️ Coberto</span>`;
+                    }
+                }
+
+                htmlTable += `<tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 8px;">${currentLoopDate.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'})}</td>
+                    <td style="padding: 8px;">${dayName}</td>
+                    <td style="padding: 8px;">${gradeName}</td>
+                    <td style="padding: 8px;">${subName}</td>
+                    <td style="padding: 8px; text-align: center;">${status}</td>
+                </tr>`;
+            });
+
+            substitutionsDoneToday.forEach(sub => {
+                contDadas++;
+                const courseName = gradeMap[sub.gradeId]?.courseName || "Padrão";
+                const rate = rates[courseName] !== undefined ? rates[courseName] : (rates["Padrão"] || 0); // Proteção contra NaN
+                const gradeName = gradeMap[sub.gradeId]?.name || "Excluída";
+
+                dadasPorCurso[courseName] = (dadasPorCurso[courseName] || 0) + 1;
+                totalFinanceiro += rate;
+
+                htmlTable += `<tr style="border-bottom: 1px solid #f1f5f9; background: #eef2ff;">
+                    <td style="padding: 8px;">${currentLoopDate.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'})}</td><td style="padding: 8px;">${dayName}</td><td style="padding: 8px;">${gradeName}</td><td style="padding: 8px;">Subst. Extra</td><td style="padding: 8px; text-align: center;"><span style="color: #4338ca; font-weight: 700;">🔄 Cobertura</span></td>
+                </tr>`;
+            });
+            currentLoopDate.setDate(currentLoopDate.getDate() + 1);
         }
+        htmlTable += `</tbody></table>`;
+
+        let breakdownHtml = '';
+        for(const c in dadasPorCurso) {
+            const r = rates[c] !== undefined ? rates[c] : (rates["Padrão"] || 0);
+            breakdownHtml += `<tr><td style="padding:6px; color:#10b981; padding-left:20px;">└ ${c} (${dadasPorCurso[c]} aulas)</td><td style="text-align:right;">+ R$ ${(dadasPorCurso[c] * r).toFixed(2).replace('.',',')}</td></tr>`;
+        }
+        for(const c in atestadoPorCurso) {
+            const r = rates[c] !== undefined ? rates[c] : (rates["Padrão"] || 0);
+            breakdownHtml += `<tr><td style="padding:6px; color:#3b82f6; padding-left:20px;">└ 🏥 ${c} (Atestado: ${atestadoPorCurso[c]} aulas)</td><td style="text-align:right;">+ R$ ${(atestadoPorCurso[c] * r).toFixed(2).replace('.',',')}</td></tr>`;
+        }
+
+        const resumoHtml = `
+            <div style="display: flex; justify-content: flex-end; margin-top: 20px; page-break-inside: avoid;">
+                <table style="width: 420px; border-collapse: collapse; font-size: 0.9rem; border: 2px solid #cbd5e1;">
+                    <tr style="background:#f8fafc;"><td style="padding:8px;">Aulas Previstas (Ciclo)</td><td style="text-align:right;">${contPrevistas}</td></tr>
+                    <tr style="background:#f0fdf4; font-weight:800;"><td colspan="2" style="padding:8px; color:#10b981;">🟢 CRÉDITOS (Aulas + Atestados)</td></tr>
+                    ${breakdownHtml || `<tr><td colspan="2" style="padding:6px; color:#64748b; padding-left:20px;">Nenhum crédito</td></tr>`}
+                    <tr style="background:#fef2f2;"><td style="padding:8px; color:#ef4444;">🔴 DESCONTOS (Substituições s/ Atestado)</td><td style="text-align:right; color:#ef4444;">- R$ ${descontoFinanceiro.toFixed(2).replace('.',',')}</td></tr>
+                    <tr style="background: #eef2ff; border-top: 2px solid #cbd5e1;"><td style="padding:12px 8px; font-weight:800; color:#4338ca;">TOTAL A RECEBER</td><td style="padding:12px 8px; text-align:right; font-weight:800; font-size:1.2rem; color:#4338ca;">R$ ${totalFinanceiro.toFixed(2).replace('.', ',')}</td></tr>
+                </table>
+            </div>
+        `;
+        
+        document.getElementById('indTableContainer').innerHTML = htmlTable + resumoHtml;
+        document.getElementById('individualActions').classList.remove("hidden");
+
+        globalIndData = { profName: professor?.name || "", mes: document.getElementById('indMonth').textContent, total: totalFinanceiro.toFixed(2).replace('.', ',') };
+
+    } catch (error) {
+        console.error(error);
+        alert("Erro ao gerar Relatório Individual: " + error.message);
+        document.getElementById('indTableContainer').innerHTML = "<p style='color:red; text-align:center;'>Ocorreu um erro interno. Verifique se os dados das turmas e atestados estão corretos.</p>";
     }
-
-    // Injeta a Nova Tabela de Resumo Inteligente
-    const resumoHtml = `
-        <div style="display: flex; justify-content: flex-end; margin-top: 20px; page-break-inside: avoid;">
-            <table style="width: 420px; border-collapse: collapse; font-size: 0.9rem; border: 2px solid #cbd5e1;">
-                <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600;">Aulas Previstas (Ciclo)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">${contPrevistas}</td></tr>
-                <tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#ef4444;">Faltas (Total)</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right; color:#ef4444; font-weight:bold;">${contFaltas}</td></tr>
-                
-                <tr><td style="padding:10px 8px; font-weight:800; color:#10b981; background:#f0fdf4; border-top:2px solid #cbd5e1;" colspan="2">🟢 RESUMO DE GANHOS (Aulas dadas)</td></tr>
-                ${breakdownDadasHtml || `<tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; padding-left:20px; color:#64748b;">Nenhuma aula registrada</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">R$ 0,00</td></tr>`}
-                
-                <tr><td style="padding:10px 8px; font-weight:800; color:#b91c1c; background:#fef2f2; border-top:2px solid #cbd5e1;" colspan="2">🔴 RESUMO DE DESCONTOS (Substituído)</td></tr>
-                ${breakdownDescontoHtml || `<tr><td style="padding:8px; border-bottom:1px solid #e2e8f0; padding-left:20px; color:#64748b;">Nenhum desconto</td><td style="padding:8px; border-bottom:1px solid #e2e8f0; text-align:right;">R$ 0,00</td></tr>`}
-
-                <tr style="background: #eef2ff; border-top: 2px solid #cbd5e1;"><td style="padding:12px 8px; font-weight:800; color:#4338ca;">TOTAL A RECEBER</td><td style="padding:12px 8px; text-align:right; font-weight:800; font-size:1.2rem; color:#4338ca;">R$ ${totalFinanceiro.toFixed(2).replace('.', ',')}</td></tr>
-            </table>
-        </div>
-    `;
-    
-    document.getElementById('indTableContainer').innerHTML = htmlTable + resumoHtml;
-
-    document.getElementById('individualActions').classList.remove("hidden");
-
-    const cursosTexto = Object.entries(dadasPorCurso).map(([c, q]) => `🎓 *${c}*: ${q} aulas`).join('\n');
-
-    globalIndData = {
-        profName: professor.name,
-        mes: document.getElementById('indMonth').textContent,
-        dadas: contDadas,
-        cursosTexto: cursosTexto || "Nenhuma aula registrada",
-        faltas: contFaltas,
-        substituidas: contSubstituido,
-        desconto: descontoFinanceiro.toFixed(2).replace('.', ','),
-        total: totalFinanceiro.toFixed(2).replace('.', ',')
-    };
 };
 
 document.getElementById('btnSendWhatsAppIndividual').onclick = () => {
-    const msg = `*Relatório Financeiro - TimeClass Pro*\n\nOlá, prof. *${globalIndData.profName}*.\nSegue o resumo do seu extrato referente ao ciclo *${globalIndData.mes}*:\n\n✅ *Aulas Ministradas (Total: ${globalIndData.dadas})*\n${globalIndData.cursosTexto}\n\n❌ *Faltas Totais:* ${globalIndData.faltas}\n🔄 *Aulas Cobertas por Outro:* ${globalIndData.substituidas}\n📉 *Desconto (Substituições):* - R$ ${globalIndData.desconto}\n\n💰 *Total a Receber:* R$ ${globalIndData.total}\n\nA direção possui o PDF detalhado disponível para assinatura.`;
-    const link = `https://wa.me/?text=${encodeURIComponent(msg)}`;
-    window.open(link, '_blank');
+    const msg = `*Relatório Financeiro - TimeClass Pro*\n\nOlá, prof. *${globalIndData.profName}*.\nSeu extrato referente ao ciclo *${globalIndData.mes}* está disponível.\n\n💰 *Total a Receber:* R$ ${globalIndData.total}\n\nO detalhamento (incluindo abonos de atestado) está no PDF anexo.`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
 };
 
-// ============================================================================
 // --- FUNÇÕES DE EXPORTAÇÃO PDF ---
-// ============================================================================
-
 window.exportFinancePDF = async (elementId, filename) => {
     const el = document.getElementById(elementId);
     if(!el) return;
-
     el.querySelectorAll('tr, tfoot, .signature-line, table').forEach(node => node.style.pageBreakInside = 'avoid');
-    
-    const originalWidth = el.style.width;
-    const originalMaxWidth = el.style.maxWidth;
-    const originalMargin = el.style.margin;
-    
-    // Ajuste para evitar corte na borda direita e caber na folha A4
-    el.style.width = '720px';
-    el.style.maxWidth = '720px';
-    el.style.margin = '0 auto';
-
-    const opt = {
-        margin: [10, 10, 10, 10],
-        filename: filename,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true }, 
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'] }
-    };
-
-    try {
-        await html2pdf().set(opt).from(el).save();
-    } catch(err) {
-        console.error("Erro no PDF:", err);
-        alert("Houve um erro na geração do PDF.");
-    } finally {
-        // Restaura a tela ao normal
-        el.style.width = originalWidth;
-        el.style.maxWidth = originalMaxWidth;
-        el.style.margin = originalMargin;
-    }
+    const originalWidth = el.style.width; const originalMaxWidth = el.style.maxWidth; const originalMargin = el.style.margin;
+    el.style.width = '720px'; el.style.maxWidth = '720px'; el.style.margin = '0 auto';
+    const opt = { margin: [10, 10, 10, 10], filename: filename, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }, pagebreak: { mode: ['css', 'legacy'] } };
+    try { await html2pdf().set(opt).from(el).save(); } catch(err) { console.error("Erro PDF:", err); } finally { el.style.width = originalWidth; el.style.maxWidth = originalMaxWidth; el.style.margin = originalMargin; }
 };
 
 document.getElementById('btnExportFinancePDF').onclick = async () => {
