@@ -91,7 +91,7 @@ function initFinanceTabs() {
 // --- MONITOR EM TEMPO REAL ---
 function startLiveMonitor() { 
     updateLiveMonitor(); 
-    setInterval(updateLiveMonitor, 600000); 
+    setInterval(updateLiveMonitor, 3000000); 
 
     const btnRefresh = document.getElementById('btnRefreshMonitor');
     if (btnRefresh) {
