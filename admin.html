@@ -84,12 +84,41 @@
             <section id="sec-finan" class="admin-section hidden">
                 <div class="section-header"><h2>💰 Gestão Financeira</h2></div>
                 <div class="card">
+                    
                     <div style="display:flex; gap:15px; margin-bottom:15px; align-items: flex-end; background: #f8fafc; padding: 15px; border-radius: 8px; flex-wrap: wrap;">
-                        <div class="input-group" style="margin: 0;"><label>Data de Fechamento</label>
-    <input type="date" id="financeEndDate" title="O sistema calculará automaticamente o ciclo a partir do dia seguinte do mês anterior.">
-</div>
+                        <div class="input-group" style="margin: 0;">
+                            <label>Data de Fechamento</label>
+                            <input type="date" id="financeEndDate" title="O sistema calculará automaticamente o ciclo a partir do dia seguinte do mês anterior.">
+                        </div>
+                        <div class="input-group" style="margin: 0; width: 140px;">
+                            <label style="color: #d97706; font-weight: bold;">Vlr. Hora Extra (R$)</label>
+                            <input type="number" id="extraHourRateGlobal" value="25" step="0.5" style="border-color: #fcd34d; background: #fffbeb;" title="Usado para eventos e planejamentos.">
+                        </div>
                         <div id="ratesContainer" style="display:flex; gap:10px; flex-wrap:wrap; flex:1; padding-left: 15px; border-left: 2px solid #e2e8f0;">
                             <span style="color:#94a3b8; font-size:0.85rem; padding-top:10px;">Carregando cursos...</span>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 25px; border-left: 4px solid #f59e0b; background: #fffbeb; padding: 15px; border-radius: 8px;">
+                        <h3 style="color: #d97706; margin-bottom: 10px; margin-top: 0;">⭐ Lançar Hora Extra ou Evento</h3>
+                        <div style="display:grid; grid-template-columns:1fr 1fr 2fr 1fr auto; gap:15px; align-items: flex-end;">
+                            <div class="input-group" style="margin: 0;">
+                                <label>Professor</label>
+                                <select id="extraTeacherSelect"><option value="">Aguardando professores...</option></select>
+                            </div>
+                            <div class="input-group" style="margin: 0;">
+                                <label>Data</label>
+                                <input type="date" id="extraDate">
+                            </div>
+                            <div class="input-group" style="margin: 0;">
+                                <label>Motivo / Evento</label>
+                                <input type="text" id="extraDescription" placeholder="Ex: Planejamento, Arraiá...">
+                            </div>
+                            <div class="input-group" style="margin: 0;">
+                                <label>Qtd. Aulas</label>
+                                <input type="number" id="extraQuantity" value="1" min="1">
+                            </div>
+                            <button class="btn-primary" id="btnSaveExtra" style="background:#f59e0b; height: 42px;">Salvar Bônus</button>
                         </div>
                     </div>
 
@@ -113,7 +142,7 @@
                     </div>
 
                     <div id="financeIndividualWrapper" class="hidden">
-                        <p style="margin-bottom:15px; color:#64748b">Relatório detalhado dia a dia e resumo dos valores ganhos por Nível/Curso.</p>
+                        <p style="margin-bottom:15px; color:#64748b">Relatório detalhado dia a dia, eventos e atestados por professor.</p>
                         <div style="display:flex; gap:15px; margin-bottom:20px; align-items: flex-end;">
                             <div class="input-group" style="margin: 0; flex: 1;">
                                 <label>Selecione o Professor</label>
