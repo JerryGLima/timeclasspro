@@ -47,7 +47,7 @@ function initNavigation() {
             if(target) target.classList.remove('hidden');
             if(item.dataset.section === 'sec-freq') loadAttendance();
             
-            // 🟢 CORREÇÃO: Força o Monitor a atualizar toda vez que voltar pra Área de Controle
+            // Força o Monitor a atualizar toda vez que voltar pra Área de Controle
             if(item.dataset.section === 'sec-dash') updateLiveMonitor(); 
         };
     });
@@ -120,18 +120,19 @@ async function saveAtestado() {
     }
 }
 
-// --- GESTÃO DE HORAS EXTRAS / EVENTOS ---
+// --- 🟢 GESTÃO DE HORAS EXTRAS / EVENTOS (NOVA LÓGICA DE VALOR UNITÁRIO) ---
 async function saveHoraExtra() {
     const tId = document.getElementById('extraTeacherSelect').value;
     const date = document.getElementById('extraDate').value;
     const desc = document.getElementById('extraDescription').value.trim();
     const qtd = parseInt(document.getElementById('extraQuantity').value);
+    const rate = parseFloat(document.getElementById('extraRate').value);
     
-    if(!tId || !date || !desc || isNaN(qtd) || qtd < 1) {
-        return alert("⚠️ Preencha todos os campos corretamente para lançar a hora extra.");
+    if(!tId || !date || !desc || isNaN(qtd) || qtd < 1 || isNaN(rate) || rate <= 0) {
+        return alert("⚠️ Preencha todos os campos corretamente. Verifique se o Valor Unitário foi inserido.");
     }
     
-    if(!confirm(`Deseja lançar ${qtd} hora(s) extra(s) para ${teacherMap[tId].name} referente a "${desc}"?`)) return;
+    if(!confirm(`Deseja lançar ${qtd} hora(s) extra(s) para ${teacherMap[tId].name} no valor de R$ ${rate.toFixed(2).replace('.',',')} cada?`)) return;
 
     try {
         await addDoc(collection(db, "horas_extras"), {
@@ -140,12 +141,18 @@ async function saveHoraExtra() {
             date: date,
             description: desc,
             quantity: qtd,
+            rate: rate, // Salva o valor exato no banco de dados para este evento
             timestamp: new Date().toISOString()
         });
-        alert("⭐ Hora Extra registrada com sucesso! O valor será calculado no fechamento.");
+        alert("⭐ Bônus/Hora Extra registrado com sucesso!");
+        
+        // Limpa os campos após salvar
         document.getElementById('extraDate').value = "";
         document.getElementById('extraDescription').value = "";
         document.getElementById('extraQuantity').value = "1";
+        document.getElementById('extraRate').value = "";
+        
+        loadAllData(); // Recarrega para mostrar na lista de visualização abaixo
     } catch (e) {
         alert("Erro ao salvar hora extra: " + e.message);
     }
@@ -185,7 +192,6 @@ async function updateLiveMonitor() {
     }
 
     try {
-        // 🟢 CORREÇÃO: Formata a data local blindada contra fuso horário
         const y = now.getFullYear();
         const m = String(now.getMonth() + 1).padStart(2, '0');
         const d = String(now.getDate()).padStart(2, '0');
@@ -195,7 +201,6 @@ async function updateLiveMonitor() {
         const schedSnap = await getDocs(qSched);
         const schedules = schedSnap.docs.map(doc => doc.data()).filter(s => s.day === today);
 
-        // 🟢 BUSCA AS SUBSTITUIÇÕES DO DIA (Sem index duplo para não travar o Firebase)
         const qAtt = query(collection(db, "attendance"), where("schoolId", "==", schoolId));
         const attSnap = await getDocs(qAtt);
         const attToday = attSnap.docs.map(doc => doc.data()).filter(a => a.date === dateStr);
@@ -220,16 +225,14 @@ async function updateLiveMonitor() {
             }
             const aula = schedules.find(s => s.gradeId === grade.id && s.period === activeP);
             
-            // 🟢 INTELIGÊNCIA: Verifica se essa aula já foi substituída localmente hoje
             const substituicao = aula ? attToday.find(a => a.gradeId === grade.id && a.period === activeP && a.isSubstitution) : null;
             
             let borderColor = aula ? '#6366f1' : '#e2e8f0';
             let teacherDisplay = aula ? (teacherMap[aula.teacherId]?.name || "Desconhecido") : "-";
             let actionButton = aula ? `<button onclick="window.prepareQuickSub('${today}', ${activeP}, '${grade.id}')" style="margin-top:8px; font-size:0.6rem; background:#fee2e2; color:#ef4444; border:1px solid #fecaca; padding:4px; border-radius:4px; cursor:pointer; font-weight:700">⚠️ SUBSTITUIR</button>` : '';
 
-            // Se tem substituição, altera o visual e some com o botão
             if (substituicao) {
-                borderColor = '#10b981'; // Verde indicando "Resolvido"
+                borderColor = '#10b981'; 
                 const nomeSubstituto = teacherMap[substituicao.teacherId]?.name || "Substituto";
                 teacherDisplay = `<del style="color:#94a3b8; font-size:0.6rem;">${teacherDisplay}</del><br><span style="background: #e0e7ff; color: #4338ca; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 0.65rem; display:inline-block; margin-top:3px;">🔄 Substituto: ${nomeSubstituto}</span>`;
                 actionButton = ''; 
@@ -291,7 +294,6 @@ document.getElementById('btnFindSubstitutes').onclick = async () => {
 window.efetivarSubstituicao = async (tId, gId, period) => {
     if(!confirm("Deseja confirmar este professor como substituto? A aula será creditada a ele no financeiro.")) return;
     
-    // 🟢 CORREÇÃO: Data local 100% blindada
     const now = new Date();
     const y = now.getFullYear();
     const m = String(now.getMonth() + 1).padStart(2, '0');
@@ -314,7 +316,6 @@ window.efetivarSubstituicao = async (tId, gId, period) => {
         
         alert("✅ Substituição registrada com sucesso!");
         
-        // 🟢 CORREÇÃO: Volta para a dashboard E recarrega a tela para a pintura verde aparecer
         document.querySelector('[data-section="sec-dash"]').click();
         updateLiveMonitor(); 
     } catch(e) {
@@ -482,7 +483,7 @@ window.redefinirSenha = async (email, name) => {
     } catch(e) { alert("Erro: " + e.message); }
 };
 
-// --- CARREGAMENTO GERAL E INJEÇÃO DOS CURSOS ---
+// --- CARREGAMENTO GERAL ---
 async function loadSchoolInfo() {
     const docSnap = await getDoc(doc(db, "schools", schoolId));
     if (docSnap.exists()) {
@@ -526,10 +527,10 @@ async function loadAllData() {
             if (ratesContainer) {
                 ratesContainer.innerHTML = '';
                 if (uniqueCourses.length === 0) {
-                    ratesContainer.innerHTML = `<div class="input-group" style="margin: 0; width: 140px;"><label>Valor H/A (R$)</label><input type="number" class="course-rate-input" data-course="Padrão" value="20" step="0.5"></div>`;
+                    ratesContainer.innerHTML = `<div class="input-group" style="margin: 0; width: 140px;"><label>Valor H/A (R$)</label><input type="number" class="course-rate-input" data-course="Padrão" value="20" step="0.01"></div>`;
                 } else {
                     uniqueCourses.forEach(course => {
-                        ratesContainer.innerHTML += `<div class="input-group" style="margin: 0; width: 160px;"><label>Vlr. ${course} (R$)</label><input type="number" class="course-rate-input" data-course="${course}" value="20" step="0.5"></div>`;
+                        ratesContainer.innerHTML += `<div class="input-group" style="margin: 0; width: 160px;"><label>Vlr. ${course} (R$)</label><input type="number" class="course-rate-input" data-course="${course}" value="20" step="0.01"></div>`;
                     });
                 }
             }
@@ -586,6 +587,42 @@ async function loadAllData() {
             if(sG) { sG.innerHTML = '<option value="">Escolha a Turma...</option>'; dataArray.forEach(g => sG.innerHTML += `<option value="${g.id}">${g.name}</option>`); }
         }
     }
+    
+    // 🟢 CARREGA A LISTA DE HORAS EXTRAS (VISUALIZADOR/AUDITORIA)
+    const listExtras = document.getElementById('listHorasExtras');
+    if(listExtras) {
+        listExtras.innerHTML = "<li>Carregando...</li>";
+        const extrasSnap = await getDocs(query(collection(db, "horas_extras"), where("schoolId", "==", schoolId)));
+        let extrasArray = extrasSnap.docs.map(d => ({id: d.id, ...d.data()}));
+        
+        // Ordenar do mais recente para o mais antigo
+        extrasArray.sort((a,b) => new Date(b.date) - new Date(a.date));
+        
+        listExtras.innerHTML = "";
+        if(extrasArray.length === 0) {
+            listExtras.innerHTML = "<li style='justify-content:center; color:#94a3b8; font-size:0.8rem;'>Nenhum bônus lançado.</li>";
+        }
+        extrasArray.forEach(ext => {
+            const pName = teacherMap[ext.teacherId]?.name || "Desconhecido";
+            const rateStr = ext.rate ? ext.rate.toFixed(2).replace('.', ',') : "0,00";
+            const total = ext.quantity * (ext.rate || 0);
+            const dataFormatada = ext.date.split('-').reverse().join('/');
+            
+            listExtras.innerHTML += `
+            <li style="padding: 10px 15px; font-size:0.8rem;">
+                <div>
+                    <strong style="color:#d97706; font-size:0.85rem;">⭐ ${ext.description}</strong><br>
+                    <span style="color:#64748b; font-weight:600;">${pName}</span> - ${dataFormatada} <br>
+                    <span style="color:#94a3b8;">${ext.quantity} aula(s) x R$ ${rateStr}</span>
+                </div>
+                <div style="display:flex; flex-direction:column; align-items:flex-end; gap:5px;">
+                    <span style="font-weight:800; color:#10b981; font-size:0.95rem;">R$ ${total.toFixed(2).replace('.',',')}</span>
+                    <button class="btn-delete" style="padding:4px 8px; font-size:0.7rem;" onclick="window.del('horas_extras', '${ext.id}')">Excluir</button>
+                </div>
+            </li>`;
+        });
+    }
+
     processDashboardInt(tC, gC, allSchedules, workload);
 }
 
@@ -750,8 +787,6 @@ window.prepareEditProfessor = (id) => window.editProfessor(id);
 document.getElementById('btnGenerateFinanceReport').onclick = async () => {
     try {
         const endDateVal = document.getElementById('financeEndDate').value;
-        const valorExtra = parseFloat(document.getElementById('extraHourRateGlobal').value || 0);
-
         if (!endDateVal) return alert("⚠️ Selecione a data de fechamento!");
 
         const rates = {};
@@ -808,9 +843,11 @@ document.getElementById('btnGenerateFinanceReport').onclick = async () => {
         const extraSnap = await getDocs(query(collection(db, "horas_extras"), where("schoolId", "==", schoolId)));
         const allExtras = extraSnap.docs.map(d => d.data()).filter(e => e.date >= startStr && e.date <= endStr);
 
+        // 🟢 INTEGRAÇÃO: O bônus agora lê a taxa exata salva em cada lançamento
         allExtras.forEach(ext => {
             if (teachersData[ext.teacherId]) {
-                const bonusGanho = ext.quantity * valorExtra;
+                const extRate = ext.rate !== undefined ? ext.rate : 0;
+                const bonusGanho = ext.quantity * extRate;
                 teachersData[ext.teacherId].extrasR += bonusGanho;
                 teachersData[ext.teacherId].totalGanho += bonusGanho;
             }
@@ -906,7 +943,6 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
     try {
         const profId = document.getElementById('financeTeacherSelect').value;
         const endDateVal = document.getElementById('financeEndDate').value;
-        const valorExtra = parseFloat(document.getElementById('extraHourRateGlobal').value || 0);
 
         if (!profId || !endDateVal) return alert("⚠️ Selecione o professor e a data de fechamento!");
 
@@ -1028,8 +1064,10 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
                 </tr>`;
             });
 
+            // 🟢 INTEGRAÇÃO: Renderiza a hora extra no contracheque individual com a taxa salva nela
             extrasHoje.forEach(ext => {
-                const bonusGanho = ext.quantity * valorExtra;
+                const extRate = ext.rate !== undefined ? ext.rate : 0;
+                const bonusGanho = ext.quantity * extRate;
                 totalFinanceiro += bonusGanho;
                 htmlTable += `<tr style="border-bottom: 1px solid #fcd34d; background: #fffbeb;">
                     <td style="padding: 8px;">${currentLoopDate.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'})}</td><td style="padding: 8px;">${dayName}</td><td style="padding: 8px; font-weight: bold; color: #d97706;">⭐ ${ext.description}</td><td style="padding: 8px;">${ext.quantity} aula(s)</td><td style="padding: 8px; text-align: center;"><span style="background: #fde68a; color: #b45309; padding: 3px 8px; border-radius: 4px; font-weight: 700;">+ R$ ${bonusGanho.toFixed(2).replace('.',',')}</span></td>
@@ -1052,7 +1090,8 @@ document.getElementById('btnGenerateIndividualReport').onclick = async () => {
         
         let breakdownExtrasHtml = '';
         myExtras.forEach(ext => {
-            const valExt = ext.quantity * valorExtra;
+            const extRate = ext.rate !== undefined ? ext.rate : 0;
+            const valExt = ext.quantity * extRate;
             breakdownExtrasHtml += `<tr><td style="padding:6px; color:#d97706; padding-left:20px;">└ ⭐ ${ext.description} (${ext.quantity} aulas)</td><td style="text-align:right; font-weight:bold; color:#d97706;">+ R$ ${valExt.toFixed(2).replace('.',',')}</td></tr>`;
         });
 
