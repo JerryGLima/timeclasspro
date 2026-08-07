@@ -172,27 +172,72 @@ function countTeacherGaps(assignments, teacherId, day, extraPeriod = null) {
 
 function candidatePenalty(task, slot, state, preferences) {
     let penalty = 0;
-    const sdKey = subjectDayKey(task.gradeId, task.subjectId, slot.day);
     const tdKey = teacherDayKey(task.teacherId, slot.day);
-    const sameSubjectDay = state.subjectDayCount.get(sdKey) || 0;
     const teacherDayCount = state.teacherDayCount.get(tdKey) || 0;
 
-    // Favorece espalhar a mesma disciplina ao longo da semana.
-    penalty += sameSubjectDay * 35;
+    // Prioridade pedagógica principal: formar blocos sequenciais de 2 aulas
+    // para o mesmo vínculo professor + turma + disciplina.
+    // Exemplos desejados: 2 -> 2; 4 -> 2+2; 5 -> 2+2+1.
+    if (preferences.preferSequentialBlocks) {
+        const sameLinkAssignments = state.assignments.filter(a =>
+            a.teacherId === task.teacherId &&
+            a.gradeId === task.gradeId &&
+            a.subjectId === task.subjectId
+        );
+        const sameDayPeriods = sameLinkAssignments
+            .filter(a => a.day === slot.day)
+            .map(a => a.period);
+        const sameDayCount = sameDayPeriods.length;
+        const adjacent = sameDayPeriods.some(p => Math.abs(p - slot.period) === 1);
 
-    // Evita sobrecarregar um único dia do professor.
-    penalty += teacherDayCount * 5;
+        const daysUsed = new Set(sameLinkAssignments.map(a => a.day));
+        const targetDays = Math.min(DAYS.length, Math.ceil(task.weeklyLessons / 2));
+
+        if (sameDayCount === 1 && adjacent) {
+            // Completar o par no mesmo dia é a maior prioridade.
+            penalty -= 95;
+        } else if (sameDayCount === 1 && !adjacent) {
+            // Duas aulas no mesmo dia, mas separadas, não é o objetivo.
+            penalty += 35;
+        } else if (sameDayCount >= 2) {
+            // Depois de formar um par, preferimos abrir outro dia para formar novo par.
+            // Não é uma proibição: se for necessário, 3 ou mais seguidas ainda podem ocorrer.
+            penalty += 45 + (sameDayCount - 2) * 18;
+            if (adjacent) penalty -= 8;
+        } else if (daysUsed.size > 0 && daysUsed.size < targetDays) {
+            // Um par já foi formado em outro dia: favorece iniciar o próximo bloco.
+            const hasCompletedPair = [...daysUsed].some(day =>
+                sameLinkAssignments.filter(a => a.day === day).length >= 2
+            );
+            if (hasCompletedPair) penalty -= 30;
+        } else if (daysUsed.size >= targetDays && targetDays > 0) {
+            // Evita espalhar a carga por mais dias que o necessário.
+            penalty += 30;
+        }
+
+        // Também favorece horários colados a qualquer outra aula do professor,
+        // ajudando a reduzir deslocamentos e janelas.
+        const teacherPeriodsSameDay = state.assignments
+            .filter(a => a.teacherId === task.teacherId && a.day === slot.day)
+            .map(a => a.period);
+        if (teacherPeriodsSameDay.some(p => Math.abs(p - slot.period) === 1)) penalty -= 18;
+        else if (teacherDayCount > 0) penalty += 6;
+    } else {
+        // Com a preferência desligada, mantém uma distribuição mais neutra.
+        penalty += teacherDayCount * 3;
+    }
 
     if (preferences.avoidLastPeriod && slot.period === 7) penalty += 12;
 
     if (preferences.avoidTeacherGaps) {
         const before = countTeacherGaps(state.assignments, task.teacherId, slot.day);
         const after = countTeacherGaps(state.assignments, task.teacherId, slot.day, slot.period);
-        penalty += Math.max(0, after - before) * 18;
+        penalty += Math.max(0, after - before) * 24;
+        if (after < before) penalty -= 8;
     }
 
     // Pequeno ruído para gerar alternativas diferentes quando houver empates.
-    penalty += Math.random() * 4;
+    penalty += Math.random() * 3;
     return penalty;
 }
 
@@ -311,21 +356,46 @@ function solve(tasks, preferences, maxNodes = 300000, onProgress = null) {
 
 function scoreSchedule(assignments, preferences) {
     let penalty = 0;
-    const subjectDays = new Map();
     const teacherDays = new Map();
+    const linkGroups = new Map();
 
     for (const a of assignments) {
-        const sd = subjectDayKey(a.gradeId, a.subjectId, a.day);
         const td = teacherDayKey(a.teacherId, a.day);
-        subjectDays.set(sd, (subjectDays.get(sd) || 0) + 1);
         if (!teacherDays.has(td)) teacherDays.set(td, []);
         teacherDays.get(td).push(a.period);
+
+        const lk = `${a.teacherId}|${a.gradeId}|${a.subjectId}`;
+        if (!linkGroups.has(lk)) linkGroups.set(lk, []);
+        linkGroups.get(lk).push(a);
+
         if (preferences.avoidLastPeriod && a.period === 7) penalty += 2;
     }
 
-    for (const count of subjectDays.values()) {
-        // Continua preferindo distribuir a disciplina na semana, sem proibir várias aulas no mesmo dia.
-        if (count > 1) penalty += (count - 1) * 2;
+    if (preferences.preferSequentialBlocks) {
+        for (const group of linkGroups.values()) {
+            const total = group.length;
+            const idealDays = Math.min(DAYS.length, Math.ceil(total / 2));
+            const byDay = new Map();
+            for (const a of group) {
+                if (!byDay.has(a.day)) byDay.set(a.day, []);
+                byDay.get(a.day).push(a.period);
+            }
+
+            // Espalhar por mais dias que o necessário reduz a qualidade.
+            if (byDay.size > idealDays) penalty += (byDay.size - idealDays) * 8;
+
+            for (const periods of byDay.values()) {
+                const unique = [...new Set(periods)].sort((a, b) => a - b);
+                if (unique.length === 1 && total > 1) penalty += 2;
+                if (unique.length >= 2) {
+                    let gaps = 0;
+                    for (let i = 1; i < unique.length; i++) gaps += Math.max(0, unique[i] - unique[i - 1] - 1);
+                    penalty += gaps * 7;
+                    // 2+2 é o padrão preferido; 3+ continua permitido, apenas menos prioritário.
+                    if (unique.length > 2) penalty += (unique.length - 2) * 2;
+                }
+            }
+        }
     }
 
     if (preferences.avoidTeacherGaps) {
@@ -467,6 +537,7 @@ export function generateAutomaticSchedule({ schoolId, teachers, grades, preferen
         maxConsecutiveSameSubject: [2, 3].includes(Number(preferences.maxConsecutiveSameSubject))
             ? Number(preferences.maxConsecutiveSameSubject)
             : 0,
+        preferSequentialBlocks: preferences.preferSequentialBlocks !== false,
         avoidTeacherGaps: preferences.avoidTeacherGaps !== false,
         avoidLastPeriod: preferences.avoidLastPeriod === true
     };

@@ -892,6 +892,7 @@ document.getElementById('btnGenerateAutomatic').onclick = async () => {
             teachers: Object.entries(teacherMap).map(([id, data]) => ({ id, ...data })),
             grades: allGrades,
             preferences: {
+                preferSequentialBlocks: document.getElementById('prefSequentialBlocks')?.checked !== false,
                 avoidTeacherGaps: document.getElementById('prefAvoidGaps').checked,
                 avoidLastPeriod: document.getElementById('prefAvoidLast').checked,
                 maxConsecutiveSameSubject: Number(document.getElementById('prefMaxConsecutiveSubject').value || 0)
