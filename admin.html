@@ -296,16 +296,25 @@
                     <input type="email" id="profEmail" placeholder="E-mail" style="margin-bottom:10px">
                     <input type="password" id="profPassword" placeholder="Senha de acesso (mín. 6 caracteres)" style="margin-bottom:5px">
                     <small style="color:#64748b; font-size:0.75rem;">💡 Deixe em branco para manter a senha atual ao editar</small>
-                    <div style="margin:15px 0"><label>Folgas:</label><br>
-                        <label><input type="checkbox" class="dia-folga" value="Segunda"> SEG</label>
-                        <label><input type="checkbox" class="dia-folga" value="Terça"> TER</label>
-                        <label><input type="checkbox" class="dia-folga" value="Quarta"> QUA</label>
-                        <label><input type="checkbox" class="dia-folga" value="Quinta"> QUI</label>
-                        <label><input type="checkbox" class="dia-folga" value="Sexta"> SEX</label>
+                    <div class="availability-card">
+                        <div class="availability-title-row">
+                            <div>
+                                <strong>Disponibilidade semanal</strong>
+                                <small>Marque os horários em que o professor pode ministrar aulas.</small>
+                            </div>
+                            <button type="button" class="btn-mini" id="btnAvailabilityAll">Marcar todos</button>
+                        </div>
+                        <div id="availabilityGrid" class="availability-grid"></div>
                     </div>
                     <div style="background:#f1f5f9; padding:15px; border-radius:10px">
-                        <label>Vincular Matéria/Turma:</label>
-                        <div style="display:flex; gap:10px"><select id="vinculoSubject"></select><select id="vinculoGrade"></select><button class="btn-primary" id="btnAddVinculo">+</button></div>
+                        <label>Vincular Matéria / Turma / Carga semanal:</label>
+                        <div class="vinculo-row">
+                            <select id="vinculoSubject"></select>
+                            <select id="vinculoGrade"></select>
+                            <input type="number" id="vinculoWeeklyLessons" min="1" max="10" value="1" title="Aulas por semana">
+                            <button class="btn-primary" id="btnAddVinculo">+</button>
+                        </div>
+                        <small class="field-help">Ex.: Matemática + 8º Ano A + 5 = cinco aulas por semana nessa turma.</small>
                         <ul id="tempVinculosList" style="margin-top:10px"></ul>
                     </div>
                     <button class="btn-primary" id="btnSaveFullProf" style="width:100%; margin-top:15px">Salvar Professor</button>
@@ -316,7 +325,17 @@
             <section id="sec-horario" class="admin-section hidden">
                 <div class="card horario-wrapper">
                     <div class="horario-controls">
-                        <h3>⚙️ Editor de Grade</h3>
+                        <h3>⚙️ Gerador de Grade</h3>
+                        <div class="auto-generator-box">
+                            <strong>✨ Geração automática</strong>
+                            <p>Usa carga semanal, disponibilidade e vínculos dos professores para montar todas as turmas sem conflitos.</p>
+                            <label class="generator-option"><input type="checkbox" id="prefAvoidGaps" checked> Evitar janelas de professor</label>
+                            <label class="generator-option"><input type="checkbox" id="prefAvoidLast"> Evitar 7º horário quando possível</label>
+                            <label class="generator-option">Máx. mesma disciplina/dia <input type="number" id="prefMaxSameSubject" min="1" max="4" value="2"></label>
+                            <button class="btn-primary btn-generate" id="btnGenerateAutomatic">✨ GERAR TODAS AS TURMAS</button>
+                            <div id="generatorStatus" class="generator-status"></div>
+                        </div>
+                        <label class="section-label">Visualizar / editar uma turma</label>
                         <select id="selectGrade" style="width:100%; margin-bottom:20px; padding:10px; border-radius:6px; border:1px solid #cbd5e1;"></select>
                         <div style="display:flex; flex-direction:column; gap:10px;">
                             <button class="btn-primary" id="btnSaveFullSchedule">💾 Salvar Grade</button>

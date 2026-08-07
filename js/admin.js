@@ -2,6 +2,7 @@ import { db, auth } from './firebase-config.js';
 import { collection, addDoc, getDocs, doc, setDoc, getDoc, deleteDoc, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { checkTeacherConflict } from './horario.js';
+import { generateAutomaticSchedule, DAYS, PERIODS, normalizeAvailability } from './gerador.js';
 import { calculateTimeSlots, compressImageToBase64, getCurrentLocation } from './utils.js';
 
 let schoolId = "";
@@ -425,36 +426,90 @@ window.prepareEditSubject = async (id) => {
     document.querySelector('[data-section="sec-cadastros"]').click();
 };
 
-window.editProfessor = async (id) => {
+function renderAvailabilityGrid(teacher = null) {
+    const grid = document.getElementById('availabilityGrid');
+    if (!grid) return;
+    const availability = teacher ? normalizeAvailability(teacher) : Object.fromEntries(DAYS.map(d => [d, [...PERIODS]]));
+    const short = { Segunda: 'SEG', Terça: 'TER', Quarta: 'QUA', Quinta: 'QUI', Sexta: 'SEX' };
+
+    grid.innerHTML = `<div></div>${PERIODS.map(p => `<div class="av-head">${p}ª</div>`).join('')}`;
+    DAYS.forEach(day => {
+        grid.innerHTML += `<div class="av-day">${short[day]}</div>${PERIODS.map(period => `
+            <label title="${day} - ${period}º horário">
+                <input type="checkbox" class="availability-check" data-day="${day}" data-period="${period}" ${availability[day].includes(period) ? 'checked' : ''}>
+            </label>`).join('')}`;
+    });
+}
+
+function readAvailabilityGrid() {
+    const result = Object.fromEntries(DAYS.map(d => [d, []]));
+    document.querySelectorAll('.availability-check:checked').forEach(cb => {
+        result[cb.dataset.day].push(Number(cb.dataset.period));
+    });
+    return result;
+}
+
+document.getElementById('btnAvailabilityAll').onclick = () => {
+    const checks = [...document.querySelectorAll('.availability-check')];
+    const mark = checks.some(c => !c.checked);
+    checks.forEach(c => c.checked = mark);
+};
+
+renderAvailabilityGrid();
+
+window.prepareEditProfessor = async (id) => {
     try {
         const p = teacherMap[id]; if (!p) return;
         document.getElementById('editProfId').value = id;
-        document.getElementById('profName').value = p.name; document.getElementById('profEmail').value = p.email;
-        document.querySelectorAll('.dia-folga').forEach(cb => { cb.checked = p.restricoes ? p.restricoes.includes(cb.value) : false; });
-        window.tempVinculos = p.vinculos ? [...p.vinculos] : []; renderTemp();
+        document.getElementById('profName').value = p.name;
+        document.getElementById('profEmail').value = p.email;
+        window.tempVinculos = p.vinculos ? p.vinculos.map(v => ({ ...v, weeklyLessons: Number(v.weeklyLessons || v.cargaSemanal || 0) })) : [];
+        renderTemp();
+        renderAvailabilityGrid(p);
         document.querySelector('[data-section="sec-professores"]').click();
     } catch (e) { console.error(e); }
 };
 
+// Mantém compatibilidade caso algum botão antigo ainda chame este nome.
+window.editProfessor = window.prepareEditProfessor;
+
 document.getElementById('btnAddVinculo').onclick = () => {
-    const s = document.getElementById('vinculoSubject'); const g = document.getElementById('vinculoGrade');
-    if(!s.value || !g.value) return alert("Selecione!");
-    window.tempVinculos.push({ subId: s.value, subName: s.options[s.selectedIndex].text, grdId: g.value, grdName: g.options[g.selectedIndex].text });
+    const s = document.getElementById('vinculoSubject');
+    const g = document.getElementById('vinculoGrade');
+    const weekly = Number(document.getElementById('vinculoWeeklyLessons').value || 0);
+    if(!s.value || !g.value) return alert("Selecione matéria e turma!");
+    if(weekly < 1) return alert("Informe a quantidade de aulas por semana!");
+
+    const duplicateIndex = window.tempVinculos.findIndex(v => v.subId === s.value && v.grdId === g.value);
+    const item = { subId: s.value, subName: s.options[s.selectedIndex].text, grdId: g.value, grdName: g.options[g.selectedIndex].text, weeklyLessons: weekly };
+    if (duplicateIndex >= 0) window.tempVinculos[duplicateIndex] = item;
+    else window.tempVinculos.push(item);
     renderTemp();
 };
 
 function renderTemp() {
     const l = document.getElementById('tempVinculosList'); l.innerHTML = "";
-    window.tempVinculos.forEach((v, i) => l.innerHTML += `<li>${v.subName} na ${v.grdName} <button type="button" onclick="window.removeTemp(${i})" style="color:red; border:none; background:none; cursor:pointer"> (x) </button></li>`);
+    window.tempVinculos.forEach((v, i) => l.innerHTML += `<li><span>${v.subName} na ${v.grdName} <strong style="color:#4338ca">• ${Number(v.weeklyLessons || 0)} aula(s)/semana</strong></span><button type="button" onclick="window.removeTemp(${i})" style="color:red; border:none; background:none; cursor:pointer">(x)</button></li>`);
 }
 window.removeTemp = (i) => { window.tempVinculos.splice(i, 1); renderTemp(); };
 
 document.getElementById('btnSaveFullProf').onclick = async () => {
     const id = document.getElementById('editProfId').value;
-    const rest = []; document.querySelectorAll('.dia-folga:checked').forEach(c => rest.push(c.value));
     const email = document.getElementById('profEmail').value.toLowerCase().trim();
     const password = document.getElementById('profPassword') ? document.getElementById('profPassword').value : "";
-    const payload = { name: document.getElementById('profName').value, email, schoolId, vinculos: window.tempVinculos, restricoes: rest };
+    const disponibilidade = readAvailabilityGrid();
+    const restricoes = DAYS.filter(day => disponibilidade[day].length === 0);
+    const payload = {
+        name: document.getElementById('profName').value,
+        email,
+        schoolId,
+        vinculos: window.tempVinculos,
+        disponibilidade,
+        restricoes
+    };
+
+    if (!payload.name || !email) return alert("Preencha nome e e-mail!");
+    if (!payload.vinculos.length) return alert("Cadastre ao menos um vínculo de matéria/turma para o professor.");
 
     if (id) {
         await setDoc(doc(db, "teachers", id), payload); alert("✅ Professor atualizado!");
@@ -639,6 +694,58 @@ function processDashboardInt(teachers, grades, schedules, workload) {
         chart.innerHTML += `<div class="chart-bar-col"><div class="chart-bar-fill" style="height:${pct}%" data-val="${aulas}"></div><span class="chart-label">${p.name.split(' ')[0]}</span></div>`;
     });
 }
+
+// --- GERADOR AUTOMÁTICO DE TODAS AS TURMAS ---
+document.getElementById('btnGenerateAutomatic').onclick = async () => {
+    const btn = document.getElementById('btnGenerateAutomatic');
+    const status = document.getElementById('generatorStatus');
+    if (!Object.keys(teacherMap).length || !allGrades.length) return alert('Cadastre professores e turmas primeiro.');
+
+    btn.disabled = true;
+    btn.textContent = '⏳ GERANDO...';
+    status.className = 'generator-status';
+    status.textContent = 'Analisando cargas, disponibilidades e conflitos...';
+
+    try {
+        const result = generateAutomaticSchedule({
+            schoolId,
+            teachers: Object.entries(teacherMap).map(([id, data]) => ({ id, ...data })),
+            grades: allGrades,
+            preferences: {
+                avoidTeacherGaps: document.getElementById('prefAvoidGaps').checked,
+                avoidLastPeriod: document.getElementById('prefAvoidLast').checked,
+                maxSameSubjectPerDay: Number(document.getElementById('prefMaxSameSubject').value || 2)
+            }
+        });
+
+        if (!result.success) {
+            status.className = 'generator-status error';
+            status.innerHTML = `<strong>Não foi possível gerar.</strong><br>${result.errors.map(e => `• ${e}`).join('<br>')}`;
+            return;
+        }
+
+        status.textContent = `Grade encontrada (${result.totalLessons} aulas). Salvando no Firebase...`;
+
+        // Só apaga a grade atual depois que uma solução completa foi encontrada.
+        const oldSnap = await getDocs(query(collection(db, 'schedules'), where('schoolId', '==', schoolId)));
+        for (const d of oldSnap.docs) await deleteDoc(d.ref);
+        for (const a of result.assignments) await addDoc(collection(db, 'schedules'), a);
+
+        status.className = 'generator-status success';
+        status.innerHTML = `<strong>✅ Grade automática criada!</strong><br>${result.totalLessons} aulas distribuídas • Qualidade estimada: ${result.quality}% • Conflitos de professor: 0`;
+        await loadAllData();
+
+        const selectedGrade = document.getElementById('selectGrade').value;
+        if (selectedGrade) await renderTimetable(selectedGrade);
+    } catch (error) {
+        console.error(error);
+        status.className = 'generator-status error';
+        status.textContent = 'Erro ao gerar/salvar a grade: ' + error.message;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '✨ GERAR TODAS AS TURMAS';
+    }
+};
 
 // --- GERADOR DE HORÁRIO --- 
 document.getElementById('selectGrade').onchange = (e) => { if(e.target.value) renderTimetable(e.target.value); };

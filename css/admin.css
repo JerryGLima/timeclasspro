@@ -149,3 +149,31 @@ input, select { width: 100%; padding: 12px; border-radius: 10px; border: 1px sol
         margin-top: 8px !important;
     }
 }
+
+/* ===== GERADOR AUTOMÁTICO / DISPONIBILIDADE ===== */
+.availability-card { margin:15px 0; padding:15px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; }
+.availability-title-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; }
+.availability-title-row small { display:block; color:#64748b; margin-top:3px; font-size:.72rem; }
+.btn-mini { border:1px solid #cbd5e1; background:white; color:#475569; border-radius:8px; padding:7px 10px; cursor:pointer; font-weight:700; font-size:.72rem; }
+.availability-grid { display:grid; grid-template-columns:80px repeat(7, minmax(34px, 1fr)); gap:5px; align-items:center; }
+.availability-grid .av-head { text-align:center; font-size:.68rem; color:#64748b; font-weight:800; }
+.availability-grid .av-day { font-size:.72rem; color:#334155; font-weight:800; }
+.availability-grid label { display:flex; justify-content:center; padding:7px 2px; border:1px solid #e2e8f0; border-radius:7px; background:white; cursor:pointer; }
+.availability-grid input { width:auto; }
+.vinculo-row { display:grid; grid-template-columns:1fr 1fr 90px 44px; gap:8px; margin-top:8px; }
+.vinculo-row input[type="number"] { min-width:0; }
+.field-help { display:block; color:#64748b; font-size:.7rem; margin-top:6px; }
+.auto-generator-box { background:linear-gradient(145deg,#eef2ff,#f8fafc); border:1px solid #c7d2fe; padding:14px; border-radius:12px; margin-bottom:18px; }
+.auto-generator-box > strong { color:#4338ca; }
+.auto-generator-box p { color:#64748b; font-size:.74rem; line-height:1.4; margin:6px 0 10px; }
+.generator-option { display:flex; align-items:center; gap:7px; font-size:.74rem; color:#334155; margin:8px 0; }
+.generator-option input[type="number"] { width:58px; margin-left:auto; padding:5px; }
+.btn-generate { width:100%; margin-top:10px; background:#7c3aed !important; }
+.generator-status { margin-top:10px; font-size:.73rem; line-height:1.45; color:#475569; }
+.generator-status.success { color:#047857; }
+.generator-status.error { color:#b91c1c; }
+.section-label { display:block; font-size:.7rem; font-weight:800; color:#64748b; text-transform:uppercase; margin-bottom:6px; }
+@media (max-width: 760px) {
+    .availability-grid { grid-template-columns:68px repeat(7, minmax(28px, 1fr)); gap:3px; }
+    .vinculo-row { grid-template-columns:1fr; }
+}
