@@ -177,10 +177,6 @@ function candidatePenalty(task, slot, state, preferences) {
     const sameSubjectDay = state.subjectDayCount.get(sdKey) || 0;
     const teacherDayCount = state.teacherDayCount.get(tdKey) || 0;
 
-    if (preferences.maxSameSubjectPerDay && sameSubjectDay >= preferences.maxSameSubjectPerDay) {
-        penalty += 250 + sameSubjectDay * 50;
-    }
-
     // Favorece espalhar a mesma disciplina ao longo da semana.
     penalty += sameSubjectDay * 35;
 
@@ -210,9 +206,30 @@ function createState() {
     };
 }
 
-function canPlace(task, slot, state) {
+function exceedsConsecutiveSubjectLimit(task, slot, state, maxConsecutiveSameSubject) {
+    const limit = Number(maxConsecutiveSameSubject || 0);
+    if (!limit) return false;
+
+    const periods = state.assignments
+        .filter(a => a.gradeId === task.gradeId && a.subjectId === task.subjectId && a.day === slot.day)
+        .map(a => a.period);
+    periods.push(slot.period);
+
+    const unique = [...new Set(periods)].sort((a, b) => a - b);
+    let run = 1;
+    let maxRun = 1;
+    for (let i = 1; i < unique.length; i++) {
+        if (unique[i] === unique[i - 1] + 1) run++;
+        else run = 1;
+        if (run > maxRun) maxRun = run;
+    }
+    return maxRun > limit;
+}
+
+function canPlace(task, slot, state, preferences = {}) {
     if (state.teacherBusy.has(teacherSlotKey(task.teacherId, slot.day, slot.period))) return false;
     if (state.gradeBusy.has(gradeSlotKey(task.gradeId, slot.day, slot.period))) return false;
+    if (exceedsConsecutiveSubjectLimit(task, slot, state, preferences.maxConsecutiveSameSubject)) return false;
     return true;
 }
 
@@ -248,12 +265,13 @@ function unplace(task, slot, state) {
     if (td <= 0) state.teacherDayCount.delete(tdKey); else state.teacherDayCount.set(tdKey, td);
 }
 
-function solve(tasks, preferences, maxNodes = 300000) {
+function solve(tasks, preferences, maxNodes = 300000, onProgress = null) {
     const state = createState();
     let nodes = 0;
 
     function recurse(index) {
         nodes++;
+        if (onProgress && nodes % 5000 === 0) onProgress({ nodes, maxNodes });
         if (nodes > maxNodes) return false;
         if (index >= tasks.length) return true;
 
@@ -262,7 +280,7 @@ function solve(tasks, preferences, maxNodes = 300000) {
         let bestCount = Infinity;
         const scanEnd = Math.min(tasks.length, index + 30);
         for (let i = index; i < scanEnd; i++) {
-            const count = tasks[i].eligibleSlots.reduce((n, s) => n + (canPlace(tasks[i], s, state) ? 1 : 0), 0);
+            const count = tasks[i].eligibleSlots.reduce((n, s) => n + (canPlace(tasks[i], s, state, preferences) ? 1 : 0), 0);
             if (count < bestCount) {
                 bestCount = count;
                 bestIndex = i;
@@ -274,7 +292,7 @@ function solve(tasks, preferences, maxNodes = 300000) {
         [tasks[index], tasks[bestIndex]] = [tasks[bestIndex], tasks[index]];
         const task = tasks[index];
         const candidates = task.eligibleSlots
-            .filter(slot => canPlace(task, slot, state))
+            .filter(slot => canPlace(task, slot, state, preferences))
             .map(slot => ({ slot, score: candidatePenalty(task, slot, state, preferences) }))
             .sort((a, b) => a.score - b.score);
 
@@ -306,7 +324,7 @@ function scoreSchedule(assignments, preferences) {
     }
 
     for (const count of subjectDays.values()) {
-        if (count > (preferences.maxSameSubjectPerDay || 2)) penalty += (count - preferences.maxSameSubjectPerDay) * 12;
+        // Continua preferindo distribuir a disciplina na semana, sem proibir várias aulas no mesmo dia.
         if (count > 1) penalty += (count - 1) * 2;
     }
 
@@ -334,10 +352,11 @@ function copyState(state) {
     };
 }
 
-function buildPartialSchedule(tasks, preferences, attempts = 50) {
+function buildPartialSchedule(tasks, preferences, attempts = 50, onProgress = null) {
     let best = { assignments: [], pending: tasks };
 
     for (let attempt = 0; attempt < attempts; attempt++) {
+        if (onProgress && attempt % 2 === 0) onProgress({ attempt: attempt + 1, attempts });
         const state = createState();
         const ordered = [...tasks].sort((a, b) => {
             const ad = a.eligibleSlots.length + Math.random() * 2;
@@ -348,7 +367,7 @@ function buildPartialSchedule(tasks, preferences, attempts = 50) {
 
         for (const task of ordered) {
             const candidates = task.eligibleSlots
-                .filter(slot => canPlace(task, slot, state))
+                .filter(slot => canPlace(task, slot, state, preferences))
                 .map(slot => ({ slot, score: candidatePenalty(task, slot, state, preferences) }))
                 .sort((a, b) => a.score - b.score);
 
@@ -443,13 +462,16 @@ function buildFailureDiagnostics(tasks, teachers, partial) {
     });
 }
 
-export function generateAutomaticSchedule({ schoolId, teachers, grades, preferences = {} }) {
+export function generateAutomaticSchedule({ schoolId, teachers, grades, preferences = {}, onProgress = null }) {
     const opts = {
-        maxSameSubjectPerDay: Number(preferences.maxSameSubjectPerDay || 2),
+        maxConsecutiveSameSubject: [2, 3].includes(Number(preferences.maxConsecutiveSameSubject))
+            ? Number(preferences.maxConsecutiveSameSubject)
+            : 0,
         avoidTeacherGaps: preferences.avoidTeacherGaps !== false,
         avoidLastPeriod: preferences.avoidLastPeriod === true
     };
 
+    onProgress?.({ stage: 'precheck', percent: 2, message: 'Validando cargas e disponibilidades...' });
     const { requirements, errors: reqErrors } = makeRequirements(teachers);
     const capacity = validateCapacity(requirements, teachers, grades);
     const errors = [...reqErrors, ...capacity.errors];
@@ -467,9 +489,17 @@ export function generateAutomaticSchedule({ schoolId, teachers, grades, preferen
     if (!requirements.length) return { success: false, stage: 'precheck', errors: ['Nenhuma carga horária semanal foi cadastrada nos vínculos dos professores.'], diagnostics: [] };
 
     let best = null;
-    for (let attempt = 0; attempt < 8; attempt++) {
+    const maxAttempts = 8;
+    const maxNodes = 300000;
+    onProgress?.({ stage: 'preparing', percent: 5, message: 'Preparando as aulas mais difíceis primeiro...' });
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
         const tasks = buildTasks(requirements, teachers).map(t => ({ ...t, schoolId }));
-        const result = solve(tasks, opts);
+        onProgress?.({ stage: 'solving', percent: Math.round(5 + (attempt / maxAttempts) * 82), attempt: attempt + 1, totalAttempts: maxAttempts, nodes: 0, maxNodes, message: `Tentativa ${attempt + 1} de ${maxAttempts}: procurando uma combinação válida...` });
+        const result = solve(tasks, opts, maxNodes, ({ nodes }) => {
+            const attemptProgress = Math.min(1, nodes / maxNodes);
+            const percent = Math.min(87, Math.round(5 + ((attempt + attemptProgress) / maxAttempts) * 82));
+            onProgress?.({ stage: 'solving', percent, attempt: attempt + 1, totalAttempts: maxAttempts, nodes, maxNodes, message: `Tentativa ${attempt + 1} de ${maxAttempts}: ${nodes.toLocaleString('pt-BR')} combinações analisadas...` });
+        });
         if (!result.success) continue;
         const quality = scoreSchedule(result.assignments, opts);
         if (!best || quality > best.quality) best = { ...result, quality };
@@ -477,8 +507,12 @@ export function generateAutomaticSchedule({ schoolId, teachers, grades, preferen
     }
 
     if (!best) {
+        onProgress?.({ stage: 'diagnosis', percent: 90, message: 'Não encontrei uma grade completa. Montando a melhor grade parcial e diagnosticando conflitos...' });
         const tasks = buildTasks(requirements, teachers).map(t => ({ ...t, schoolId }));
-        const partial = buildPartialSchedule(tasks, opts);
+        const partial = buildPartialSchedule(tasks, opts, 50, ({ attempt, attempts }) => {
+            const percent = Math.min(97, Math.round(90 + (attempt / attempts) * 7));
+            onProgress?.({ stage: 'diagnosis', percent, message: `Analisando conflitos e alternativas (${attempt}/${attempts})...` });
+        });
         const totalRequired = tasks.length;
         const totalPlaced = partial.assignments.length;
         const diagnostics = buildFailureDiagnostics(tasks, teachers, partial);
@@ -495,6 +529,7 @@ export function generateAutomaticSchedule({ schoolId, teachers, grades, preferen
         };
     }
 
+    onProgress?.({ stage: 'done', percent: 100, message: 'Grade completa encontrada.' });
     return {
         success: true,
         assignments: best.assignments,

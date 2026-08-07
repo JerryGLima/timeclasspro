@@ -726,27 +726,177 @@ function renderGeneratorDiagnostics(result) {
     return `${summary}${errors ? `<div class="generator-errors">${errors}</div>` : ''}${cards || '<div class="diagnostic-card warning"><p>Amplie as disponibilidades ou reduza alguma restrição e tente novamente.</p></div>'}<div class="generator-safe-note">🔒 A grade já salva não foi alterada.</div>`;
 }
 
+let activeGeneratorWorker = null;
+let activeGeneratorCancel = null;
+let generatorTimerId = null;
+let generatorStartedAt = 0;
+
+function formatGeneratorElapsed(ms) {
+    const total = Math.max(0, Math.floor(ms / 1000));
+    const min = Math.floor(total / 60);
+    const sec = total % 60;
+    return min ? `${min}m ${String(sec).padStart(2, '0')}s` : `${sec}s`;
+}
+
+function renderGeneratorProgress(progress = {}) {
+    const status = document.getElementById('generatorStatus');
+    const percent = Math.max(0, Math.min(100, Number(progress.percent || 0)));
+    const elapsed = formatGeneratorElapsed(Date.now() - generatorStartedAt);
+    const details = progress.nodes
+        ? `${Number(progress.nodes).toLocaleString('pt-BR')} combinações analisadas`
+        : (progress.stage === 'diagnosis' ? 'Procurando a melhor alternativa possível' : 'Processamento em andamento');
+
+    status.className = 'generator-status running';
+    status.innerHTML = `
+        <div class="generator-running-card">
+            <div class="generator-running-head">
+                <div>
+                    <strong><span class="generator-spinner"></span> Gerando grade automática...</strong>
+                    <span>${escapeGeneratorHtml(progress.message || 'Analisando professores, turmas e disponibilidades...')}</span>
+                </div>
+                <b>${Math.round(percent)}%</b>
+            </div>
+            <div class="generator-progress-track"><div class="generator-progress-fill" style="width:${percent}%"></div></div>
+            <div class="generator-running-meta">
+                <span>${escapeGeneratorHtml(details)}</span>
+                <span>Tempo: <b id="generatorElapsed">${elapsed}</b></span>
+            </div>
+            <small>Você pode continuar vendo esta tela. O cálculo está sendo executado separado da interface.</small>
+        </div>`;
+}
+
+function startGeneratorTimer() {
+    clearInterval(generatorTimerId);
+    generatorTimerId = setInterval(() => {
+        const elapsed = document.getElementById('generatorElapsed');
+        if (elapsed) elapsed.textContent = formatGeneratorElapsed(Date.now() - generatorStartedAt);
+    }, 1000);
+}
+
+function stopGeneratorTimer() {
+    clearInterval(generatorTimerId);
+    generatorTimerId = null;
+}
+
+function runAutomaticGeneratorInWorker(payload, onProgress) {
+    return new Promise((resolve, reject) => {
+        let worker;
+        try {
+            worker = new Worker(new URL('./gerador-worker.js', import.meta.url), { type: 'module' });
+        } catch (error) {
+            reject(new Error('Seu navegador não conseguiu iniciar o gerador em segundo plano: ' + error.message));
+            return;
+        }
+
+        activeGeneratorWorker = worker;
+        activeGeneratorCancel = () => {
+            worker.terminate();
+            activeGeneratorWorker = null;
+            activeGeneratorCancel = null;
+            reject(new Error('__GENERATOR_CANCELLED__'));
+        };
+        worker.onmessage = (event) => {
+            const data = event.data || {};
+            if (data.type === 'progress') {
+                onProgress?.(data.progress || {});
+                return;
+            }
+            if (data.type === 'result') {
+                worker.terminate();
+                activeGeneratorWorker = null;
+                activeGeneratorCancel = null;
+                resolve(data.result);
+                return;
+            }
+            if (data.type === 'error') {
+                worker.terminate();
+                activeGeneratorWorker = null;
+                activeGeneratorCancel = null;
+                reject(new Error(data.error || 'Erro desconhecido no gerador.'));
+            }
+        };
+        worker.onerror = (event) => {
+            worker.terminate();
+            activeGeneratorWorker = null;
+            activeGeneratorCancel = null;
+            reject(new Error(event.message || 'Falha ao executar o gerador em segundo plano.'));
+        };
+        worker.postMessage({ type: 'generate', payload });
+    });
+}
+
+async function saveGeneratedSchedule(assignments, status) {
+    status.className = 'generator-status running';
+    status.innerHTML = `
+        <div class="generator-running-card">
+            <div class="generator-running-head"><div><strong><span class="generator-spinner"></span> Salvando a nova grade...</strong><span>Removendo a grade anterior e gravando a solução encontrada.</span></div><b id="saveGeneratorPct">0%</b></div>
+            <div class="generator-progress-track"><div id="saveGeneratorBar" class="generator-progress-fill" style="width:0%"></div></div>
+            <div class="generator-running-meta"><span id="saveGeneratorText">Preparando salvamento...</span><span>Não feche esta página durante esta etapa.</span></div>
+        </div>`;
+
+    const oldSnap = await getDocs(query(collection(db, 'schedules'), where('schoolId', '==', schoolId)));
+    const totalOps = Math.max(1, oldSnap.size + assignments.length);
+    let completed = 0;
+    const updateSave = (message) => {
+        const pct = Math.round((completed / totalOps) * 100);
+        const bar = document.getElementById('saveGeneratorBar');
+        const txt = document.getElementById('saveGeneratorText');
+        const pctEl = document.getElementById('saveGeneratorPct');
+        if (bar) bar.style.width = `${pct}%`;
+        if (txt) txt.textContent = message;
+        if (pctEl) pctEl.textContent = `${pct}%`;
+    };
+
+    for (const d of oldSnap.docs) {
+        await deleteDoc(d.ref);
+        completed++;
+        updateSave(`Removendo grade anterior (${completed}/${totalOps})...`);
+    }
+    for (const a of assignments) {
+        await addDoc(collection(db, 'schedules'), a);
+        completed++;
+        updateSave(`Salvando aulas (${completed}/${totalOps})...`);
+    }
+}
+
 document.getElementById('btnGenerateAutomatic').onclick = async () => {
     const btn = document.getElementById('btnGenerateAutomatic');
     const status = document.getElementById('generatorStatus');
+
+    if (activeGeneratorWorker) {
+        if (activeGeneratorCancel) activeGeneratorCancel();
+        else { activeGeneratorWorker.terminate(); activeGeneratorWorker = null; }
+        stopGeneratorTimer();
+        btn.classList.remove('is-cancel');
+        btn.textContent = '✨ GERAR TODAS AS TURMAS';
+        status.className = 'generator-status warning';
+        status.innerHTML = '<div class="generator-summary warning"><strong>⏹️ Geração cancelada</strong><span>Nenhuma alteração foi feita na grade salva.</span></div>';
+        return;
+    }
+
     if (!Object.keys(teacherMap).length || !allGrades.length) return alert('Cadastre professores e turmas primeiro.');
 
-    btn.disabled = true;
-    btn.textContent = '⏳ GERANDO...';
-    status.className = 'generator-status';
-    status.textContent = 'Analisando cargas, disponibilidades e conflitos...';
+    generatorStartedAt = Date.now();
+    btn.disabled = false;
+    btn.classList.add('is-cancel');
+    btn.textContent = '✖ CANCELAR GERAÇÃO';
+    renderGeneratorProgress({ percent: 1, message: 'Preparando dados para o gerador...' });
+    startGeneratorTimer();
 
     try {
-        const result = generateAutomaticSchedule({
+        const payload = {
             schoolId,
             teachers: Object.entries(teacherMap).map(([id, data]) => ({ id, ...data })),
             grades: allGrades,
             preferences: {
                 avoidTeacherGaps: document.getElementById('prefAvoidGaps').checked,
                 avoidLastPeriod: document.getElementById('prefAvoidLast').checked,
-                maxSameSubjectPerDay: Number(document.getElementById('prefMaxSameSubject').value || 2)
+                maxConsecutiveSameSubject: Number(document.getElementById('prefMaxConsecutiveSubject').value || 0)
             }
-        });
+        };
+
+        const result = await runAutomaticGeneratorInWorker(payload, renderGeneratorProgress);
+        stopGeneratorTimer();
 
         if (!result.success) {
             status.className = 'generator-status diagnosis';
@@ -754,26 +904,30 @@ document.getElementById('btnGenerateAutomatic').onclick = async () => {
             return;
         }
 
-        status.textContent = `Grade encontrada (${result.totalLessons} aulas). Salvando no Firebase...`;
-
-        // Só apaga a grade atual depois que uma solução completa foi encontrada.
-        const oldSnap = await getDocs(query(collection(db, 'schedules'), where('schoolId', '==', schoolId)));
-        for (const d of oldSnap.docs) await deleteDoc(d.ref);
-        for (const a of result.assignments) await addDoc(collection(db, 'schedules'), a);
+        await saveGeneratedSchedule(result.assignments, status);
 
         status.className = 'generator-status success';
         const observations = (result.diagnostics || []).filter(d => d.severity === 'info');
-        status.innerHTML = `<div class="generator-summary success"><strong>✅ Grade automática criada!</strong><span>${result.totalLessons} aulas distribuídas • Qualidade estimada: ${result.quality}% • Conflitos obrigatórios: 0</span></div>${observations.length ? `<div class="generator-observations"><b>Observações</b>${observations.map(d => `<span>• ${escapeGeneratorHtml(d.title)} — ${escapeGeneratorHtml(d.message)}</span>`).join('')}</div>` : ''}`;
+        status.innerHTML = `<div class="generator-summary success"><strong>✅ Grade automática criada!</strong><span>${result.totalLessons} aulas distribuídas • Qualidade estimada: ${result.quality}% • Conflitos obrigatórios: 0 • Tempo: ${formatGeneratorElapsed(Date.now() - generatorStartedAt)}</span></div>${observations.length ? `<div class="generator-observations"><b>Observações</b>${observations.map(d => `<span>• ${escapeGeneratorHtml(d.title)} — ${escapeGeneratorHtml(d.message)}</span>`).join('')}</div>` : ''}`;
         await loadAllData();
 
         const selectedGrade = document.getElementById('selectGrade').value;
         if (selectedGrade) await renderTimetable(selectedGrade);
     } catch (error) {
+        stopGeneratorTimer();
+        if (error.message === '__GENERATOR_CANCELLED__') return;
         console.error(error);
         status.className = 'generator-status error';
         status.textContent = 'Erro ao gerar/salvar a grade: ' + error.message;
     } finally {
+        if (activeGeneratorWorker) {
+            activeGeneratorWorker.terminate();
+            activeGeneratorWorker = null;
+        }
+        activeGeneratorCancel = null;
+        stopGeneratorTimer();
         btn.disabled = false;
+        btn.classList.remove('is-cancel');
         btn.textContent = '✨ GERAR TODAS AS TURMAS';
     }
 };

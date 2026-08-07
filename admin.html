@@ -331,7 +331,15 @@
                             <p>Usa carga semanal, disponibilidade e vínculos dos professores para montar todas as turmas sem conflitos.</p>
                             <label class="generator-option"><input type="checkbox" id="prefAvoidGaps" checked> Evitar janelas de professor</label>
                             <label class="generator-option"><input type="checkbox" id="prefAvoidLast"> Evitar 7º horário quando possível</label>
-                            <label class="generator-option">Máx. mesma disciplina/dia <input type="number" id="prefMaxSameSubject" min="1" max="4" value="2"></label>
+                            <label class="generator-option generator-option-select">
+                                <span>Disciplinas consecutivas</span>
+                                <select id="prefMaxConsecutiveSubject">
+                                    <option value="0" selected>Sem limite</option>
+                                    <option value="2">Máximo 2 consecutivas</option>
+                                    <option value="3">Máximo 3 consecutivas</option>
+                                </select>
+                            </label>
+                            <small class="generator-help">Ex.: com “Sem limite”, Matemática pode ocupar 1ª, 2ª, 3ª e outros horários seguidos, se isso ajudar a fechar a grade.</small>
                             <button class="btn-primary btn-generate" id="btnGenerateAutomatic">✨ GERAR TODAS AS TURMAS</button>
                             <div id="generatorStatus" class="generator-status"></div>
                         </div>
