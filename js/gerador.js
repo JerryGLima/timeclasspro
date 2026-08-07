@@ -69,6 +69,7 @@ function makeRequirements(teachers) {
 
 function validateCapacity(requirements, teachers, grades) {
     const errors = [];
+    const diagnostics = [];
     const teacherMap = Object.fromEntries(teachers.map(t => [t.id, t]));
     const gradeMap = Object.fromEntries(grades.map(g => [g.id, g]));
 
@@ -85,21 +86,47 @@ function validateCapacity(requirements, teachers, grades) {
     }
 
     for (const [gradeId, total] of Object.entries(gradeTotals)) {
+        const name = gradeMap[gradeId]?.name || 'Turma';
         if (total > 35) {
-            errors.push(`${gradeMap[gradeId]?.name || 'Turma'} possui ${total} aulas semanais cadastradas, mas há somente 35 horários.`);
+            errors.push(`${name} possui ${total} aulas semanais cadastradas, mas há somente 35 horários.`);
+            diagnostics.push({
+                severity: 'critical',
+                type: 'grade_overload',
+                title: `${name}: carga acima da capacidade`,
+                message: `A turma possui ${total} aulas para apenas 35 horários semanais.`,
+                suggestion: `Reduza pelo menos ${total - 35} aula(s) da carga semanal dessa turma.`
+            });
+        } else if (total < 35) {
+            diagnostics.push({
+                severity: 'info',
+                type: 'grade_underload',
+                title: `${name}: ${35 - total} horário(s) livre(s)`,
+                message: `Foram cadastradas ${total} de 35 aulas semanais.`,
+                suggestion: 'Isso não impede a geração; os demais horários permanecerão vagos.'
+            });
         }
     }
 
     for (const [teacherId, total] of Object.entries(teacherTotals)) {
         const teacher = teacherMap[teacherId];
+        if (!teacher) continue;
         const availability = normalizeAvailability(teacher);
         const availableSlots = DAYS.reduce((sum, day) => sum + availability[day].length, 0);
         if (total > availableSlots) {
+            const shortage = total - availableSlots;
             errors.push(`${teacher.name} precisa ministrar ${total} aulas, mas possui apenas ${availableSlots} horários disponíveis.`);
+            diagnostics.push({
+                severity: 'critical',
+                type: 'teacher_capacity',
+                teacherId,
+                title: `${teacher.name}: faltam ${shortage} horário(s)`,
+                message: `Carga semanal: ${total} aulas. Disponibilidade: ${availableSlots} horários.`,
+                suggestion: `Libere pelo menos ${shortage} novo(s) horário(s) na disponibilidade do professor.`
+            });
         }
     }
 
-    return errors;
+    return { errors, diagnostics };
 }
 
 function buildTasks(requirements, teachers) {
@@ -293,6 +320,129 @@ function scoreSchedule(assignments, preferences) {
     return Math.max(0, Math.round(100 - penalty / Math.max(1, assignments.length) * 3));
 }
 
+function taskIdentity(task) {
+    return `${task.teacherId}|${task.gradeId}|${task.subjectId}`;
+}
+
+function copyState(state) {
+    return {
+        assignments: state.assignments.map(a => ({ ...a })),
+        teacherBusy: new Set(state.teacherBusy),
+        gradeBusy: new Set(state.gradeBusy),
+        subjectDayCount: new Map(state.subjectDayCount),
+        teacherDayCount: new Map(state.teacherDayCount)
+    };
+}
+
+function buildPartialSchedule(tasks, preferences, attempts = 50) {
+    let best = { assignments: [], pending: tasks };
+
+    for (let attempt = 0; attempt < attempts; attempt++) {
+        const state = createState();
+        const ordered = [...tasks].sort((a, b) => {
+            const ad = a.eligibleSlots.length + Math.random() * 2;
+            const bd = b.eligibleSlots.length + Math.random() * 2;
+            return ad - bd || b.weeklyLessons - a.weeklyLessons;
+        });
+        const pending = [];
+
+        for (const task of ordered) {
+            const candidates = task.eligibleSlots
+                .filter(slot => canPlace(task, slot, state))
+                .map(slot => ({ slot, score: candidatePenalty(task, slot, state, preferences) }))
+                .sort((a, b) => a.score - b.score);
+
+            if (!candidates.length) {
+                pending.push(task);
+                continue;
+            }
+            place(task, candidates[0].slot, state);
+        }
+
+        if (state.assignments.length > best.assignments.length) {
+            best = { assignments: copyState(state).assignments, pending };
+        }
+        if (!pending.length) break;
+    }
+    return best;
+}
+
+function groupPendingTasks(pending) {
+    const grouped = new Map();
+    for (const task of pending) {
+        const key = taskIdentity(task);
+        if (!grouped.has(key)) grouped.set(key, { ...task, pendingLessons: 0 });
+        grouped.get(key).pendingLessons++;
+    }
+    return [...grouped.values()];
+}
+
+function findTeacherAvailabilitySuggestions(task, teachers, partialAssignments) {
+    const teacher = teachers.find(t => t.id === task.teacherId);
+    if (!teacher) return [];
+    const availability = normalizeAvailability(teacher);
+    const suggestions = [];
+
+    for (const day of DAYS) {
+        for (const period of PERIODS) {
+            if (availability[day].includes(period)) continue;
+            const teacherBusy = partialAssignments.some(a => a.teacherId === task.teacherId && a.day === day && a.period === period);
+            const gradeBusy = partialAssignments.some(a => a.gradeId === task.gradeId && a.day === day && a.period === period);
+            if (!teacherBusy && !gradeBusy) suggestions.push({ day, period, kind: 'release_availability' });
+        }
+    }
+    return suggestions.slice(0, 3);
+}
+
+function findMoveSuggestions(task, partialAssignments) {
+    const suggestions = [];
+    for (const slot of task.eligibleSlots) {
+        const teacherConflict = partialAssignments.find(a => a.teacherId === task.teacherId && a.day === slot.day && a.period === slot.period);
+        const gradeConflict = partialAssignments.find(a => a.gradeId === task.gradeId && a.day === slot.day && a.period === slot.period);
+        if (teacherConflict || gradeConflict) {
+            suggestions.push({
+                day: slot.day,
+                period: slot.period,
+                kind: teacherConflict ? 'teacher_conflict' : 'grade_conflict',
+                conflict: teacherConflict || gradeConflict
+            });
+        }
+    }
+    return suggestions.slice(0, 3);
+}
+
+function buildFailureDiagnostics(tasks, teachers, partial) {
+    const grouped = groupPendingTasks(partial.pending);
+    return grouped.map(item => {
+        const releaseOptions = findTeacherAvailabilitySuggestions(item, teachers, partial.assignments);
+        const moveOptions = findMoveSuggestions(item, partial.assignments);
+        const suggestions = [];
+
+        for (const option of releaseOptions) {
+            suggestions.push(`Liberar ${option.day}, ${option.period}ª aula para ${item.teacherName}.`);
+        }
+        for (const option of moveOptions) {
+            if (option.kind === 'teacher_conflict') {
+                suggestions.push(`Reorganizar uma aula de ${item.teacherName} em ${option.day}, ${option.period}ª aula para abrir esse horário.`);
+            } else {
+                suggestions.push(`Mover a aula que ocupa ${item.gradeName} em ${option.day}, ${option.period}ª aula.`);
+            }
+        }
+        if (!suggestions.length) suggestions.push('Amplie a disponibilidade do professor ou reduza uma restrição da turma/disciplina.');
+
+        return {
+            severity: 'warning',
+            type: 'unplaced_lessons',
+            teacherId: item.teacherId,
+            gradeId: item.gradeId,
+            subjectId: item.subjectId,
+            title: `${item.teacherName} • ${item.subjectName} • ${item.gradeName}`,
+            message: `${item.pendingLessons} aula(s) ficaram sem encaixe.`,
+            suggestions: suggestions.slice(0, 4)
+        };
+    });
+}
+
 export function generateAutomaticSchedule({ schoolId, teachers, grades, preferences = {} }) {
     const opts = {
         maxSameSubjectPerDay: Number(preferences.maxSameSubjectPerDay || 2),
@@ -301,12 +451,22 @@ export function generateAutomaticSchedule({ schoolId, teachers, grades, preferen
     };
 
     const { requirements, errors: reqErrors } = makeRequirements(teachers);
-    const errors = [...reqErrors, ...validateCapacity(requirements, teachers, grades)];
-    if (errors.length) return { success: false, errors };
-    if (!requirements.length) return { success: false, errors: ['Nenhuma carga horária semanal foi cadastrada nos vínculos dos professores.'] };
+    const capacity = validateCapacity(requirements, teachers, grades);
+    const errors = [...reqErrors, ...capacity.errors];
+    if (errors.length) {
+        return {
+            success: false,
+            stage: 'precheck',
+            errors,
+            diagnostics: capacity.diagnostics,
+            totalRequired: requirements.reduce((sum, r) => sum + r.weeklyLessons, 0),
+            totalPlaced: 0,
+            pendingLessons: requirements.reduce((sum, r) => sum + r.weeklyLessons, 0)
+        };
+    }
+    if (!requirements.length) return { success: false, stage: 'precheck', errors: ['Nenhuma carga horária semanal foi cadastrada nos vínculos dos professores.'], diagnostics: [] };
 
     let best = null;
-    // Várias tentativas ajudam a encontrar uma solução melhor quando existem muitas combinações equivalentes.
     for (let attempt = 0; attempt < 8; attempt++) {
         const tasks = buildTasks(requirements, teachers).map(t => ({ ...t, schoolId }));
         const result = solve(tasks, opts);
@@ -317,9 +477,21 @@ export function generateAutomaticSchedule({ schoolId, teachers, grades, preferen
     }
 
     if (!best) {
+        const tasks = buildTasks(requirements, teachers).map(t => ({ ...t, schoolId }));
+        const partial = buildPartialSchedule(tasks, opts);
+        const totalRequired = tasks.length;
+        const totalPlaced = partial.assignments.length;
+        const diagnostics = buildFailureDiagnostics(tasks, teachers, partial);
         return {
             success: false,
-            errors: ['Não foi possível encontrar uma grade completa com as disponibilidades atuais. Verifique professores com poucos horários disponíveis ou cargas muito concentradas.']
+            stage: 'solver',
+            errors: ['Não foi possível encontrar uma grade 100% completa com as disponibilidades atuais.'],
+            diagnostics,
+            partialAssignments: partial.assignments,
+            totalRequired,
+            totalPlaced,
+            pendingLessons: totalRequired - totalPlaced,
+            completionPercent: Math.round(totalPlaced / Math.max(1, totalRequired) * 100)
         };
     }
 
@@ -328,6 +500,11 @@ export function generateAutomaticSchedule({ schoolId, teachers, grades, preferen
         assignments: best.assignments,
         quality: best.quality,
         totalLessons: best.assignments.length,
+        totalRequired: best.assignments.length,
+        totalPlaced: best.assignments.length,
+        pendingLessons: 0,
+        completionPercent: 100,
+        diagnostics: capacity.diagnostics,
         requirements
     };
 }

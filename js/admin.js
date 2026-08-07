@@ -696,6 +696,36 @@ function processDashboardInt(teachers, grades, schedules, workload) {
 }
 
 // --- GERADOR AUTOMÁTICO DE TODAS AS TURMAS ---
+function escapeGeneratorHtml(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+}
+
+function renderGeneratorDiagnostics(result) {
+    const diagnostics = Array.isArray(result.diagnostics) ? result.diagnostics : [];
+    const summary = result.stage === 'precheck'
+        ? `<div class="generator-summary critical"><strong>⚠️ Cadastro incompatível com a geração</strong><span>Corrija os itens abaixo antes de tentar novamente.</span></div>`
+        : `<div class="generator-summary warning"><strong>🟡 Grade parcialmente possível: ${Number(result.completionPercent || 0)}%</strong><span>${Number(result.totalPlaced || 0)} de ${Number(result.totalRequired || 0)} aulas encaixadas • ${Number(result.pendingLessons || 0)} pendente(s)</span></div>`;
+
+    const cards = diagnostics.filter(d => d.severity !== 'info').map(d => {
+        const suggestions = Array.isArray(d.suggestions)
+            ? d.suggestions
+            : (d.suggestion ? [d.suggestion] : []);
+        return `<div class="diagnostic-card ${escapeGeneratorHtml(d.severity || 'warning')}">
+            <strong>${escapeGeneratorHtml(d.title || 'Ajuste necessário')}</strong>
+            <p>${escapeGeneratorHtml(d.message || '')}</p>
+            ${suggestions.length ? `<div class="diagnostic-suggestions"><b>💡 Sugestões</b>${suggestions.map(x => `<span>• ${escapeGeneratorHtml(x)}</span>`).join('')}</div>` : ''}
+        </div>`;
+    }).join('');
+
+    const errors = (result.errors || []).map(e => `<span>• ${escapeGeneratorHtml(e)}</span>`).join('');
+    return `${summary}${errors ? `<div class="generator-errors">${errors}</div>` : ''}${cards || '<div class="diagnostic-card warning"><p>Amplie as disponibilidades ou reduza alguma restrição e tente novamente.</p></div>'}<div class="generator-safe-note">🔒 A grade já salva não foi alterada.</div>`;
+}
+
 document.getElementById('btnGenerateAutomatic').onclick = async () => {
     const btn = document.getElementById('btnGenerateAutomatic');
     const status = document.getElementById('generatorStatus');
@@ -719,8 +749,8 @@ document.getElementById('btnGenerateAutomatic').onclick = async () => {
         });
 
         if (!result.success) {
-            status.className = 'generator-status error';
-            status.innerHTML = `<strong>Não foi possível gerar.</strong><br>${result.errors.map(e => `• ${e}`).join('<br>')}`;
+            status.className = 'generator-status diagnosis';
+            status.innerHTML = renderGeneratorDiagnostics(result);
             return;
         }
 
@@ -732,7 +762,8 @@ document.getElementById('btnGenerateAutomatic').onclick = async () => {
         for (const a of result.assignments) await addDoc(collection(db, 'schedules'), a);
 
         status.className = 'generator-status success';
-        status.innerHTML = `<strong>✅ Grade automática criada!</strong><br>${result.totalLessons} aulas distribuídas • Qualidade estimada: ${result.quality}% • Conflitos de professor: 0`;
+        const observations = (result.diagnostics || []).filter(d => d.severity === 'info');
+        status.innerHTML = `<div class="generator-summary success"><strong>✅ Grade automática criada!</strong><span>${result.totalLessons} aulas distribuídas • Qualidade estimada: ${result.quality}% • Conflitos obrigatórios: 0</span></div>${observations.length ? `<div class="generator-observations"><b>Observações</b>${observations.map(d => `<span>• ${escapeGeneratorHtml(d.title)} — ${escapeGeneratorHtml(d.message)}</span>`).join('')}</div>` : ''}`;
         await loadAllData();
 
         const selectedGrade = document.getElementById('selectGrade').value;
