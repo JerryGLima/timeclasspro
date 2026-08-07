@@ -620,7 +620,10 @@ async function loadAllData() {
                 else if(col === 'grades') htmlItem += `<strong>${data.name}</strong> (${data.courseName || 'Padrão'})`;
                 else if(col === 'teachers') {
                     const mats = data.vinculos ? data.vinculos.map(v => v.subName).join(', ') : '-';
-                    htmlItem += `<strong>${data.name}</strong> <span style="font-size:0.7rem; background:#e0e7ff; padding:2px 6px; border-radius:4px; margin-left:8px">${workload[data.id] || 0} aulas</span><br><small>${mats}</small>`;
+                    const cargaSemanalCadastrada = (data.vinculos || []).reduce((total, vinculo) => {
+                        return total + Number(vinculo.weeklyLessons || vinculo.cargaSemanal || 0);
+                    }, 0);
+                    htmlItem += `<strong>${data.name}</strong> <span style="font-size:0.7rem; background:#e0e7ff; padding:2px 6px; border-radius:4px; margin-left:8px">${cargaSemanalCadastrada} aulas</span><br><small>${mats}</small>`;
                 }
                 
                 if (col === 'teachers') {
