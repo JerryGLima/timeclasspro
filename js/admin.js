@@ -47,6 +47,7 @@ function initNavigation() {
             const target = document.getElementById(item.dataset.section);
             if(target) target.classList.remove('hidden');
             if(item.dataset.section === 'sec-freq') loadAttendance();
+            if(item.dataset.section === 'sec-horario') loadSchoolSchedule();
             
             // Força o Monitor a atualizar toda vez que voltar pra Área de Controle
             if(item.dataset.section === 'sec-dash') updateLiveMonitor(); 
@@ -862,7 +863,8 @@ async function saveGeneratedSchedule(assignments, status) {
     }
 }
 
-document.getElementById('btnGenerateAutomatic').onclick = async () => {
+const legacyGeneratorButton = document.getElementById('btnGenerateAutomatic');
+if (legacyGeneratorButton) legacyGeneratorButton.onclick = async () => {
     const btn = document.getElementById('btnGenerateAutomatic');
     const status = document.getElementById('generatorStatus');
 
@@ -915,8 +917,7 @@ document.getElementById('btnGenerateAutomatic').onclick = async () => {
         status.innerHTML = `<div class="generator-summary success"><strong>✅ Grade automática criada!</strong><span>${result.totalLessons} aulas distribuídas • Qualidade estimada: ${result.quality}% • Conflitos obrigatórios: 0 • Tempo: ${formatGeneratorElapsed(Date.now() - generatorStartedAt)}</span></div>${observations.length ? `<div class="generator-observations"><b>Observações</b>${observations.map(d => `<span>• ${escapeGeneratorHtml(d.title)} — ${escapeGeneratorHtml(d.message)}</span>`).join('')}</div>` : ''}`;
         await loadAllData();
 
-        const selectedGrade = document.getElementById('selectGrade').value;
-        if (selectedGrade) await renderTimetable(selectedGrade);
+        await loadSchoolSchedule();
     } catch (error) {
         stopGeneratorTimer();
         if (error.message === '__GENERATOR_CANCELLED__') return;
@@ -936,137 +937,362 @@ document.getElementById('btnGenerateAutomatic').onclick = async () => {
     }
 };
 
-// --- GERADOR DE HORÁRIO --- 
-document.getElementById('selectGrade').onchange = (e) => { if(e.target.value) renderTimetable(e.target.value); };
 
-async function renderTimetable(gradeId) {
-    const grade = gradeMap[gradeId];
-    const container = document.getElementById('timetableContainer');
-    const days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'];
-    const timesLabels = calculateTimeSlots(grade.startTime, grade.lessonDuration, 7, grade.intervalAfter, grade.intervalDuration);
-    
-    const teacherArray = Object.values(teacherMap).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-    const filteredOptions = []; 
-    teacherArray.forEach(p => {
-        p.vinculos?.forEach(v => {
-            if(v.grdId === gradeId) filteredOptions.push({ value: `${p.id}|${v.subId}`, label: `${p.name} - ${subjectMap[v.subId]?.sigla || ""}`, teacherId: p.id });
-        });
+}
+
+// --- GRADE ESCOLAR - PAINEL VISUAL DA COORDENAÇÃO ---
+let schoolScheduleData = {};
+let schoolScheduleOriginal = {};
+let scheduleModalEditingKey = null;
+const scheduleDays = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'];
+
+const scheduleEscape = (value = '') => String(value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+
+function scheduleKey(gradeId, day, period) {
+    return `${gradeId}__${day}__${parseInt(period)}`;
+}
+
+function getScheduleTimeLabels(gradeId) {
+    const grade = gradeMap[gradeId] || {};
+    return calculateTimeSlots(grade.startTime || '07:00', grade.lessonDuration || 50, 7, grade.intervalAfter || 4, grade.intervalDuration || 15);
+}
+
+async function loadSchoolSchedule() {
+    const board = document.getElementById('schoolScheduleBoard');
+    if (!board || !schoolId) return;
+    board.innerHTML = '<div class="schedule-empty-state">⏳ Carregando a grade completa...</div>';
+
+    const snap = await getDocs(query(collection(db, 'schedules'), where('schoolId', '==', schoolId)));
+    schoolScheduleData = {};
+    snap.forEach(d => {
+        const data = d.data();
+        schoolScheduleData[scheduleKey(data.gradeId, data.day, data.period)] = { id: d.id, ...data, period: parseInt(data.period) };
     });
+    schoolScheduleOriginal = JSON.parse(JSON.stringify(schoolScheduleData));
+    populateScheduleFilters();
+    renderSchoolScheduleBoard();
+}
 
-    const qSaved = query(collection(db, "schedules"), where("gradeId", "==", gradeId));
-    const savedSnap = await getDocs(qSaved); const savedData = {}; 
-    savedSnap.forEach(d => { const s = d.data(); savedData[`${s.day}-${s.period}`] = `${s.teacherId}|${s.subjectId}`; });
-
-    let html = `<table><thead><tr><th>Horário</th><th>SEG</th><th>TER</th><th>QUA</th><th>QUI</th><th>SEX</th></tr></thead><tbody>`;
-    for(let i=1; i<=7; i++) {
-        html += `<tr><td class="time-column">${timesLabels[i-1] || '--:--'}</td>${days.map(d => {
-            const curVal = savedData[`${d}-${i}`] || "";
-            return `<td><select class="schedule-select" data-day="${d}" data-period="${i}">
-                <option value="">Livre</option>
-                ${filteredOptions.map(o => `<option value="${o.value}" ${curVal === o.value ? 'selected' : ''}>${o.label}</option>`).join('')}
-            </select></td>`;
-        }).join('')}</tr>`;
-        if(i === grade.intervalAfter) html += `<tr class="intervalo-row"><td colspan="6">INTERVALO</td></tr>`;
+function populateScheduleFilters() {
+    const gradeFilter = document.getElementById('scheduleGradeFilter');
+    const teacherFilter = document.getElementById('scheduleTeacherFilter');
+    const modalGrade = document.getElementById('modalScheduleGrade');
+    if (gradeFilter) {
+        gradeFilter.innerHTML = '<option value="">Todas as turmas</option>' + allGrades.map(g => `<option value="${g.id}">${scheduleEscape(g.name)}</option>`).join('');
     }
-    html += `</tbody></table>`;
-    container.innerHTML = html;
+    if (teacherFilter) {
+        teacherFilter.innerHTML = '<option value="">Selecione o professor</option>' + Object.values(teacherMap).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR')).map(t => `<option value="${t.id}">${scheduleEscape(t.name)}</option>`).join('');
+    }
+    if (modalGrade) {
+        const current = modalGrade.value;
+        modalGrade.innerHTML = allGrades.map(g => `<option value="${g.id}">${scheduleEscape(g.name)}</option>`).join('');
+        if (current && gradeMap[current]) modalGrade.value = current;
+    }
+}
 
-    document.querySelectorAll('.schedule-select').forEach(s => {
-        s.onchange = async (e) => {
-            const val = e.target.value; if(!val) return;
-            const [tId, sId] = val.split('|'); const day = e.target.dataset.day;
-            const countDia = Array.from(document.querySelectorAll(`.schedule-select[data-day="${day}"]`)).filter(sel => sel.value.startsWith(tId)).length;
-            if(countDia > 2) alert("🚫 Sugestão: Limite de 2 aulas/dia.");
-            if(teacherMap[tId].restricoes?.includes(day)) { alert(`Folga de ${teacherMap[tId].name}`); e.target.value = ""; return; }
-            if(await checkTeacherConflict(tId, day, e.target.dataset.period, gradeId, schoolId)) { alert("⚠️ CONFLITO!"); e.target.value = ""; }
-        };
+function getScheduleMode() {
+    return document.getElementById('scheduleViewMode')?.value || 'school';
+}
+
+function getSelectedScheduleGrade() {
+    return document.getElementById('scheduleGradeFilter')?.value || '';
+}
+
+function getSelectedScheduleTeacher() {
+    return document.getElementById('scheduleTeacherFilter')?.value || '';
+}
+
+function getSchedulePeriods(gradeId) {
+    const grade = gradeMap[gradeId] || {};
+    return Array.from({ length: 7 }, (_, i) => i + 1);
+}
+
+function scheduleCellHtml(item, gradeId, day, period, showGrade = false) {
+    const key = scheduleKey(gradeId, day, period);
+    const grade = gradeMap[gradeId];
+    if (!item) {
+        return `<button class="school-schedule-cell empty" data-schedule-key="${key}" type="button">＋ Adicionar aula</button>`;
+    }
+    const subject = subjectMap[item.subjectId];
+    const teacher = teacherMap[item.teacherId];
+    return `<button class="school-schedule-cell" data-schedule-key="${key}" type="button">
+        ${showGrade ? `<span class="schedule-cell-grade">${scheduleEscape(grade?.name || 'Turma')}</span>` : ''}
+        <span class="schedule-cell-subject">${scheduleEscape(subject?.name || 'Aula')}</span>
+        <span class="schedule-cell-teacher">👨‍🏫 ${scheduleEscape(teacher?.name || 'Professor')}</span>
+        <span class="schedule-cell-actions">✎ Clique para editar</span>
+    </button>`;
+}
+
+function renderSchoolScheduleBoard() {
+    const board = document.getElementById('schoolScheduleBoard');
+    if (!board) return;
+    const mode = getScheduleMode();
+    const gradeId = getSelectedScheduleGrade();
+    const teacherId = getSelectedScheduleTeacher();
+
+    const grades = gradeId ? [gradeMap[gradeId]].filter(Boolean) : allGrades;
+    const maxPeriods = 7;
+    const baseGradeId = grades[0]?.id || allGrades[0]?.id;
+    const labels = getScheduleTimeLabels(baseGradeId);
+
+    if (mode === 'teacher') {
+        if (!teacherId) {
+            board.innerHTML = '<div class="schedule-empty-state">👨‍🏫 Selecione um professor para visualizar a grade dele.</div>';
+            updateScheduleSummary();
+            return;
+        }
+        const teacher = teacherMap[teacherId];
+        let html = `<div class="schedule-board-title">👨‍🏫 ${scheduleEscape(teacher?.name || 'Professor')}</div><table class="school-schedule-table"><thead><tr><th class="time-head">Horário</th>${scheduleDays.map(d=>`<th>${d}</th>`).join('')}</tr></thead><tbody>`;
+        for (let p=1;p<=maxPeriods;p++) {
+            html += `<tr><td class="time-cell">${p}ª<br><small>${scheduleEscape(labels[p-1] || '')}</small></td>`;
+            for (const day of scheduleDays) {
+                const items = Object.values(schoolScheduleData).filter(s => s.teacherId === teacherId && s.day === day && s.period === p);
+                const item = items[0];
+                html += `<td>${item ? scheduleCellHtml(item, item.gradeId, day, p, true) : `<button class="school-schedule-cell empty" type="button" data-add-teacher="${teacherId}" data-day="${day}" data-period="${p}">Livre</button>`}</td>`;
+            }
+            html += '</tr>';
+        }
+        html += '</tbody></table>';
+        board.innerHTML = html;
+    } else {
+        const columns = mode === 'grade' ? grades : grades;
+        if (!columns.length) {
+            board.innerHTML = '<div class="schedule-empty-state">Nenhuma turma cadastrada.</div>';
+            updateScheduleSummary();
+            return;
+        }
+        let html = `<div class="schedule-board-title">${mode === 'grade' ? `📚 ${scheduleEscape(columns[0].name)}` : '🏫 Todas as turmas'}</div><table class="school-schedule-table"><thead><tr><th class="time-head">Horário</th>${columns.map(g=>`<th>${scheduleEscape(g.name)}</th>`).join('')}</tr></thead><tbody>`;
+        for (let p=1;p<=maxPeriods;p++) {
+            html += `<tr><td class="time-cell">${p}ª<br><small>${scheduleEscape(labels[p-1] || '')}</small></td>`;
+            for (const grade of columns) {
+                let dayItems = [];
+                // In the school view, each column is a TURMA and each row needs a day column.
+                // Therefore a compact weekly matrix is rendered below when there are multiple days.
+                html += `<td style="padding:4px"><div class="schedule-week-mini">${scheduleDays.map(day=>{
+                    const item = schoolScheduleData[scheduleKey(grade.id, day, p)];
+                    return `<div class="schedule-mini-day"><span>${day.slice(0,3).toUpperCase()}</span>${scheduleCellHtml(item, grade.id, day, p, false)}</div>`;
+                }).join('')}</div></td>`;
+            }
+            html += '</tr>';
+        }
+        html += '</tbody></table>';
+        board.innerHTML = html;
+    }
+    bindScheduleBoardCells();
+    updateScheduleSummary();
+}
+
+function updateScheduleSummary() {
+    const el = document.getElementById('scheduleGridSummary');
+    if (!el) return;
+    const total = Object.keys(schoolScheduleData).length;
+    const pending = JSON.stringify(schoolScheduleData) !== JSON.stringify(schoolScheduleOriginal);
+    el.textContent = `${total} aulas cadastradas${pending ? ' • alterações pendentes' : ''}`;
+}
+
+function bindScheduleBoardCells() {
+    document.querySelectorAll('#schoolScheduleBoard [data-schedule-key]').forEach(btn => {
+        btn.onclick = () => openScheduleModalFromKey(btn.dataset.scheduleKey);
+    });
+    document.querySelectorAll('#schoolScheduleBoard [data-add-teacher]').forEach(btn => {
+        btn.onclick = () => openScheduleModal({ teacherId: btn.dataset.addTeacher, day: btn.dataset.day, period: parseInt(btn.dataset.period) });
     });
 }
 
-document.getElementById('btnSaveFullSchedule').onclick = async () => {
-    const gradeId = document.getElementById('selectGrade').value; if(!gradeId) return;
-    const selects = document.querySelectorAll('.schedule-select');
-    const snap = await getDocs(query(collection(db, "schedules"), where("gradeId", "==", gradeId)));
-    for(const d of snap.docs) await deleteDoc(d.ref);
-    for(const s of selects) {
-        if(s.value) {
-            const [tId, sId] = s.value.split('|');
-            await addDoc(collection(db, "schedules"), { schoolId, gradeId: gradeId, teacherId: tId, subjectId: sId, day: s.dataset.day, period: parseInt(s.dataset.period) });
-        }
-    }
-    alert("✅ Grade salva!"); loadAllData();
-};
-
-document.getElementById('btnCopyPublicLink').onclick = () => {
-    const gid = document.getElementById('selectGrade').value; 
-    if(!gid) return alert("Selecione uma turma primeiro!");
-    const link = `${window.location.origin}${window.location.pathname.replace('admin.html', 'turma.html')}?s=${schoolId}&g=${gid}`;
-    navigator.clipboard.writeText(link); 
-    alert("🔗 Link da turma copiado com sucesso!");
-};
-
-document.getElementById('btnExportPdfAdmin').onclick = async () => {
-    const gid = document.getElementById('selectGrade').value; 
-    if(!gid) return alert("Selecione uma turma primeiro!");
-    
-    const grade = gradeMap[gid];
-    const container = document.getElementById('timetableContainer');
-    const header = document.getElementById('headerGradeAdmin');
-    
-    document.getElementById('viewGradeAdmin').textContent = grade.name;
-    document.getElementById('viewCourseAdmin').textContent = grade.courseName || "Padrão";
-    document.getElementById('schoolLogoPrint').src = grade.logoUrl || "";
-    
-    const tableClone = container.querySelector('table').cloneNode(true);
-    const selects = container.querySelectorAll('select');
-    
-    let selIdx = 0;
-    tableClone.querySelectorAll('tr').forEach((tr) => {
-        if(tr.classList.contains('intervalo-row')) return;
-        tr.querySelectorAll('td').forEach((td, colIdx) => {
-            if(colIdx === 0) return;
-            const val = selects[selIdx].value; 
-            td.innerHTML = "";
-            if(val) {
-                const [tId, sId] = val.split('|');
-                const sub = subjectMap[sId];
-                td.innerHTML = `<div style="background:${sub?.color || '#6366f1'}; color:white; font-weight:700; border-radius:6px; height:26px; display:flex; align-items:center; justify-content:center; text-align:center; padding:2px; font-size:0.55rem; white-space: nowrap; overflow: hidden;">${sub?.name || 'Aula'}</div>`;
-            } else {
-                td.innerHTML = `<div style="background:#f8fafc; border-radius:8px; border: 1px dashed #e2e8f0; height:26px;"></div>`;
+function refreshModalTeacherSubjects(gradeId, selectedValue = '') {
+    const select = document.getElementById('modalScheduleTeacherSubject');
+    if (!select) return;
+    const options = [];
+    Object.values(teacherMap).forEach(t => {
+        (t.vinculos || []).forEach(v => {
+            if (v.grdId === gradeId) {
+                options.push({ value: `${t.id}|${v.subId}`, label: `${t.name} — ${subjectMap[v.subId]?.name || v.subName || 'Disciplina'}` });
             }
-            selIdx++;
         });
     });
-    
-    tableClone.querySelectorAll('.time-column').forEach(el => { 
-        el.style.height = "26px"; 
-        el.style.fontSize = "0.55rem"; 
-        el.style.width = "85px"; 
-    });
-    
-    const pw = document.createElement('div'); 
-    pw.style.padding = "10px"; 
-    pw.style.backgroundColor = "white";
-    
-    const clonedHeader = header.cloneNode(true); 
-    clonedHeader.style.display = "block";
-    
-    pw.appendChild(clonedHeader);
-    pw.appendChild(tableClone);
-    
-    const foot = document.createElement('div');
-    foot.innerHTML = `<p style="text-align:center; font-size:0.45rem; color:#94a3b8; margin-top:2px; border-top:1px solid #eee; padding-top:1px">Direitos reservados a Jerry Gleydison &copy; ${new Date().getFullYear()}</p>`;
-    pw.appendChild(foot);
-    
-    html2pdf().set({ 
-        margin: [10, 10, 10, 10], 
-        filename: `Horario_${grade.name}.pdf`, 
-        image: { type: 'jpeg', quality: 1 }, 
-        html2canvas: { scale: 3, backgroundColor: '#ffffff', useCORS: true }, 
-        jsPDF: { unit: 'mm', format: [210, 147.5], orientation: 'landscape' },
-        pagebreak: { mode: ['css', 'legacy'] }
-    }).from(pw).save();
-};
+    options.sort((a,b)=>a.label.localeCompare(b.label,'pt-BR'));
+    select.innerHTML = '<option value="">Selecione professor e disciplina</option>' + options.map(o=>`<option value="${o.value}">${scheduleEscape(o.label)}</option>`).join('');
+    if (selectedValue) select.value = selectedValue;
+}
+
+function openScheduleModalFromKey(key) {
+    const item = schoolScheduleData[key];
+    const parts = key.split('__');
+    openScheduleModal(item ? { ...item, key } : { gradeId: parts[0], day: parts[1], period: parseInt(parts[2]) });
+}
+
+function openScheduleModal(data = {}) {
+    scheduleModalEditingKey = data.key || (data.gradeId ? scheduleKey(data.gradeId, data.day || 'Segunda', data.period || 1) : null);
+    const modal = document.getElementById('scheduleClassModal');
+    const grade = document.getElementById('modalScheduleGrade');
+    const day = document.getElementById('modalScheduleDay');
+    const period = document.getElementById('modalSchedulePeriod');
+    const title = document.getElementById('scheduleModalTitle');
+    const subtitle = document.getElementById('scheduleModalSubtitle');
+    const conflict = document.getElementById('modalScheduleConflict');
+    title.textContent = schoolScheduleData[scheduleModalEditingKey] ? 'Editar aula' : 'Adicionar aula';
+    grade.value = data.gradeId || allGrades[0]?.id || '';
+    day.value = data.day || 'Segunda';
+    period.innerHTML = getSchedulePeriods(grade.value).map(p=>`<option value="${p}">${p}ª aula${getScheduleTimeLabels(grade.value)[p-1] ? ` — ${scheduleEscape(getScheduleTimeLabels(grade.value)[p-1])}` : ''}</option>`).join('');
+    period.value = String(data.period || 1);
+    refreshModalTeacherSubjects(grade.value, data.teacherId && data.subjectId ? `${data.teacherId}|${data.subjectId}` : '');
+    subtitle.textContent = `${gradeMap[grade.value]?.name || ''} • ${day.value} • ${period.value}ª aula`;
+    conflict.classList.add('hidden');
+    conflict.textContent = '';
+    const deleteBtn = document.getElementById('btnDeleteScheduleFromModal');
+    deleteBtn.style.display = schoolScheduleData[scheduleModalEditingKey] ? 'inline-block' : 'none';
+    deleteBtn.onclick = () => { const keyToRemove = scheduleModalEditingKey; closeScheduleModal(); removeScheduleFromKey(keyToRemove); };
+    modal.classList.remove('hidden');
+    modal.setAttribute('aria-hidden','false');
+}
+
+function closeScheduleModal() {
+    const modal = document.getElementById('scheduleClassModal');
+    modal.classList.add('hidden');
+    modal.setAttribute('aria-hidden','true');
+    scheduleModalEditingKey = null;
+}
+
+function validateScheduleAssignment(gradeId, day, period, teacherId, ignoreKey = null) {
+    if (!gradeId || !teacherId) return 'Selecione a turma e o professor/discipina.';
+    const teacher = teacherMap[teacherId];
+    if (teacher?.restricoes?.includes(day)) return `⚠️ ${teacher.name} possui folga/restrição na ${day}-feira.`;
+    for (const [key, item] of Object.entries(schoolScheduleData)) {
+        if (key === ignoreKey) continue;
+        if (item.gradeId === gradeId && item.day === day && item.period === period) return '⚠️ Esta turma já possui uma aula neste horário.';
+        if (item.teacherId === teacherId && item.day === day && item.period === period) return `⚠️ ${teacher?.name || 'O professor'} já está em outra turma neste horário.`;
+    }
+    return '';
+}
+
+function updateScheduleModalSubtitle() {
+    const g = document.getElementById('modalScheduleGrade').value;
+    const d = document.getElementById('modalScheduleDay').value;
+    const p = document.getElementById('modalSchedulePeriod').value;
+    document.getElementById('scheduleModalSubtitle').textContent = `${gradeMap[g]?.name || ''} • ${d} • ${p}ª aula`;
+}
+
+async function confirmScheduleModal() {
+    const gradeId = document.getElementById('modalScheduleGrade').value;
+    const day = document.getElementById('modalScheduleDay').value;
+    const period = parseInt(document.getElementById('modalSchedulePeriod').value);
+    const pair = document.getElementById('modalScheduleTeacherSubject').value;
+    const message = document.getElementById('modalScheduleConflict');
+    if (!pair) { message.textContent = '⚠️ Selecione o professor e a disciplina.'; message.classList.remove('hidden'); return; }
+    const [teacherId, subjectId] = pair.split('|');
+    const key = scheduleKey(gradeId, day, period);
+    const ignoreKey = scheduleModalEditingKey;
+    const conflict = validateScheduleAssignment(gradeId, day, period, teacherId, ignoreKey);
+    if (conflict) { message.textContent = conflict; message.classList.remove('hidden'); return; }
+
+    if (ignoreKey && ignoreKey !== key) delete schoolScheduleData[ignoreKey];
+    const old = schoolScheduleData[key];
+    schoolScheduleData[key] = { ...(old || {}), ...(old?.id ? { id: old.id } : {}), schoolId, gradeId, teacherId, subjectId, day, period };
+    closeScheduleModal();
+    renderSchoolScheduleBoard();
+    document.getElementById('scheduleValidationText').textContent = 'Alteração realizada na tela. Clique em “Salvar alterações” para gravar no Firebase.';
+}
+
+function removeScheduleFromKey(key) {
+    if (!schoolScheduleData[key]) return;
+    const item = schoolScheduleData[key];
+    const grade = gradeMap[item.gradeId]?.name || 'Turma';
+    const subject = subjectMap[item.subjectId]?.name || 'Aula';
+    if (!confirm(`Remover ${subject} de ${grade}, ${item.day}, ${item.period}ª aula?`)) return;
+    delete schoolScheduleData[key];
+    renderSchoolScheduleBoard();
+    document.getElementById('scheduleValidationText').textContent = 'Aula removida da grade. Clique em “Salvar alterações” para confirmar.';
+}
+
+async function saveSchoolScheduleChanges() {
+    const changedKeys = new Set([...Object.keys(schoolScheduleOriginal), ...Object.keys(schoolScheduleData)]);
+    const toDelete = [];
+    const toCreate = [];
+    for (const key of changedKeys) {
+        const before = schoolScheduleOriginal[key];
+        const after = schoolScheduleData[key];
+        if (JSON.stringify(before || null) === JSON.stringify(after || null)) continue;
+        if (before?.id) toDelete.push(before.id);
+        if (after) toCreate.push(after);
+    }
+    if (!toDelete.length && !toCreate.length) return alert('ℹ️ Não há alterações para salvar.');
+    if (!confirm(`Salvar alterações?\n\nAulas removidas/editadas: ${toDelete.length}\nNovas aulas: ${toCreate.length}`)) return;
+    const btn = document.getElementById('btnSaveSchoolSchedule');
+    btn.disabled = true; btn.textContent = '⏳ Salvando...';
+    try {
+        for (const id of toDelete) await deleteDoc(doc(db, 'schedules', id));
+        for (const item of toCreate) {
+            const { id, ...payload } = item;
+            await addDoc(collection(db, 'schedules'), payload);
+        }
+        await loadAllData();
+        await loadSchoolSchedule();
+        document.getElementById('scheduleValidationText').textContent = '✅ Grade salva com sucesso no Firebase.';
+        alert('✅ Todas as alterações da grade foram salvas.');
+    } catch (e) {
+        console.error(e);
+        alert('Erro ao salvar a grade: ' + e.message);
+    } finally {
+        btn.disabled = false; btn.textContent = '💾 Salvar alterações';
+    }
+}
+
+function initSchoolSchedulePanel() {
+    const mode = document.getElementById('scheduleViewMode');
+    const grade = document.getElementById('scheduleGradeFilter');
+    const teacher = document.getElementById('scheduleTeacherFilter');
+    const gradeWrap = document.getElementById('scheduleGradeFilterWrap');
+    const teacherWrap = document.getElementById('scheduleTeacherFilterWrap');
+    mode.onchange = () => {
+        const value = mode.value;
+        gradeWrap.classList.toggle('hidden', value === 'teacher');
+        teacherWrap.classList.toggle('hidden', value !== 'teacher');
+        renderSchoolScheduleBoard();
+    };
+    grade.onchange = renderSchoolScheduleBoard;
+    teacher.onchange = renderSchoolScheduleBoard;
+    document.getElementById('btnRefreshSchoolSchedule').onclick = loadSchoolSchedule;
+    document.getElementById('btnSaveSchoolSchedule').onclick = saveSchoolScheduleChanges;
+    document.getElementById('btnAddScheduleClass').onclick = () => openScheduleModal({ gradeId: grade.value || allGrades[0]?.id, day:'Segunda', period:1 });
+    document.getElementById('btnRemoveScheduleClass').onclick = () => {
+        const modeValue = mode.value;
+        const options = Object.values(schoolScheduleData).filter(s => modeValue === 'teacher' ? s.teacherId === teacher.value : (!grade.value || s.gradeId === grade.value));
+        if (!options.length) return alert('Não há aulas para remover nesta visualização.');
+        const list = options.sort((a,b)=>a.day.localeCompare(b.day)||a.period-b.period).map(s => `${s.day} ${s.period}ª — ${gradeMap[s.gradeId]?.name || ''} — ${subjectMap[s.subjectId]?.name || ''}`).join('\n');
+        const chosen = prompt(`Digite o horário que deseja remover no formato DIA|PERÍODO.\n\nExemplo: Segunda|1\n\nAulas disponíveis:\n${list}`);
+        if (!chosen) return;
+        const [day, periodRaw] = chosen.split('|');
+        const period = parseInt(periodRaw);
+        const found = options.find(s => s.day.toLowerCase() === day.trim().toLowerCase() && s.period === period);
+        if (!found) return alert('Horário não encontrado na visualização atual.');
+        removeScheduleFromKey(scheduleKey(found.gradeId, found.day, found.period));
+    };
+    document.getElementById('btnCloseScheduleModal').onclick = closeScheduleModal;
+    document.getElementById('btnCancelScheduleModal').onclick = closeScheduleModal;
+    document.querySelector('#scheduleClassModal .schedule-modal-backdrop').onclick = closeScheduleModal;
+    document.getElementById('modalScheduleGrade').onchange = () => {
+        const g = document.getElementById('modalScheduleGrade').value;
+        refreshModalTeacherSubjects(g);
+        const period = document.getElementById('modalSchedulePeriod');
+        period.innerHTML = getSchedulePeriods(g).map(p=>`<option value="${p}">${p}ª aula${getScheduleTimeLabels(g)[p-1] ? ` — ${scheduleEscape(getScheduleTimeLabels(g)[p-1])}` : ''}</option>`).join('');
+        updateScheduleModalSubtitle();
+    };
+    document.getElementById('modalScheduleDay').onchange = updateScheduleModalSubtitle;
+    document.getElementById('modalSchedulePeriod').onchange = updateScheduleModalSubtitle;
+    document.getElementById('btnConfirmScheduleModal').onclick = confirmScheduleModal;
+}
+
+initSchoolSchedulePanel();
+
+document.getElementById('btnCopyPublicLink')?.addEventListener('click', () => {
+    const gid = document.getElementById('scheduleGradeFilter')?.value;
+    if (!gid) return alert('Selecione uma turma na visualização por turma para copiar o link.');
+    const link = `${window.location.origin}${window.location.pathname.replace('admin.html', 'turma.html')}?s=${schoolId}&g=${gid}`;
+    navigator.clipboard.writeText(link);
+    alert('🔗 Link da turma copiado com sucesso!');
+});
 
 window.del = async (c, i) => { 
     if(confirm("Tem certeza que deseja excluir?")) { 
