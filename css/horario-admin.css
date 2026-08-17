@@ -148,3 +148,24 @@ td {
         border: 1px solid #eee;
     }
 }
+
+
+/* VISÃO GERAL DA COORDENAÇÃO */
+.schedule-view-switch { display:flex; gap:8px; margin:8px 0 14px; flex-wrap:wrap; }
+.schedule-view-btn { border:1px solid var(--border-color); background:#fff; color:#475569; border-radius:8px; padding:9px 12px; cursor:pointer; font-weight:700; }
+.schedule-view-btn.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+.schedule-all-controls { margin-bottom:14px; }
+.schedule-all-toolbar { display:flex; gap:8px; align-items:center; margin-bottom:6px; }
+.schedule-all-toolbar select { flex:1; min-width:0; padding:9px; border:1px solid var(--border-color); border-radius:8px; background:#fff; }
+.btn-secondary { border:1px solid var(--border-color); background:#fff; color:#475569; border-radius:8px; padding:9px 12px; cursor:pointer; font-weight:700; }
+.all-schedule-wrap { overflow:auto; border:1px solid var(--border-color); border-radius:10px; background:#fff; padding:8px; }
+.all-schedule-table { min-width:900px; margin:0; }
+.all-schedule-table th { position:sticky; top:0; z-index:2; }
+.all-schedule-table .all-time { position:sticky; left:0; z-index:3; background:#fff; width:76px; }
+.all-schedule-cell { min-width:150px; height:58px; padding:4px !important; }
+.all-schedule-card { width:100%; min-height:50px; border:1px solid var(--border-color); border-radius:8px; background:#f8fafc; padding:6px; text-align:left; cursor:pointer; }
+.all-schedule-card:hover { border-color:var(--primary); box-shadow:0 2px 8px rgba(15,23,42,.08); }
+.all-schedule-card strong { display:block; font-size:.72rem; color:#334155; }
+.all-schedule-card span { display:block; font-size:.64rem; color:#64748b; margin-top:2px; }
+.all-schedule-empty { color:#cbd5e1; font-size:.72rem; text-align:center; }
+@media(max-width:800px){ .schedule-all-toolbar{flex-direction:column;align-items:stretch;} }

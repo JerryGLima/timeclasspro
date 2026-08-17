@@ -345,8 +345,22 @@
                             <button class="btn-primary btn-generate" id="btnGenerateAutomatic">✨ GERAR TODAS AS TURMAS</button>
                             <div id="generatorStatus" class="generator-status"></div>
                         </div>
-                        <label class="section-label">Visualizar / editar uma turma</label>
-                        <select id="selectGrade" style="width:100%; margin-bottom:20px; padding:10px; border-radius:6px; border:1px solid #cbd5e1;"></select>
+                        <label class="section-label">Visualização da grade</label>
+                        <div class="schedule-view-switch">
+                            <button type="button" class="schedule-view-btn active" id="btnScheduleSingle">📚 Uma turma</button>
+                            <button type="button" class="schedule-view-btn" id="btnScheduleAll">🏫 Todas as turmas</button>
+                        </div>
+                        <div id="singleScheduleControls">
+                            <label class="section-label">Visualizar / editar uma turma</label>
+                            <select id="selectGrade" style="width:100%; margin-bottom:20px; padding:10px; border-radius:6px; border:1px solid #cbd5e1;"></select>
+                        </div>
+                        <div id="allScheduleControls" class="schedule-all-controls hidden">
+                            <div class="schedule-all-toolbar">
+                                <select id="scheduleAllGradeFilter"><option value="">Todas as turmas</option></select>
+                                <button type="button" class="btn-secondary" id="btnRefreshAllSchedules">↻ Atualizar</button>
+                            </div>
+                            <small>Visualização geral da grade. Clique em uma aula para abrir a turma correspondente no editor.</small>
+                        </div>
                         <div style="display:flex; flex-direction:column; gap:10px;">
                             <button class="btn-primary" id="btnSaveFullSchedule">💾 Salvar Grade</button>
                             <button class="btn-primary" id="btnExportPdfAdmin" style="background:#10b981">📄 Baixar PDF</button>
