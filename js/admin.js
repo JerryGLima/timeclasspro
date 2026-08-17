@@ -955,6 +955,9 @@ function setScheduleView(mode) {
     btnScheduleAll?.classList.toggle('active', all);
     singleScheduleControls?.classList.toggle('hidden', all);
     allScheduleControls?.classList.toggle('hidden', !all);
+    document.getElementById('btnSaveFullSchedule')?.classList.toggle('hidden', all);
+    document.getElementById('btnExportPdfAdmin')?.classList.toggle('hidden', all);
+    document.getElementById('btnCopyPublicLink')?.classList.toggle('hidden', all);
     if (all) renderAllSchedules();
 }
 
@@ -962,6 +965,27 @@ btnScheduleSingle?.addEventListener('click', () => setScheduleView('single'));
 btnScheduleAll?.addEventListener('click', () => setScheduleView('all'));
 btnRefreshAllSchedules?.addEventListener('click', renderAllSchedules);
 scheduleAllGradeFilter?.addEventListener('change', renderAllSchedules);
+
+function sortCoordinationGrades(grades) {
+    const normalized = (grades || []).map(g => ({ ...g, __sortName: String(g.name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim() }));
+    const getKey = (name) => {
+        const n = name;
+        const ano = n.match(/(?:^|\s)([6-9])(?:º|°)?\s*ANO\b/);
+        if (ano) return [0, Number(ano[1]), 0, n];
+        const serie = n.match(/([1-3])(?:ª|A)?\s*SERIE\b/);
+        if (serie) {
+            const num = Number(serie[1]);
+            const letra = (n.match(/\b([AB])\b(?:\s*$|\s*-?\s*$)/) || n.match(/[-\s]([AB])$/) || [,''])[1];
+            return [1, num, letra === 'A' ? 0 : letra === 'B' ? 1 : 2, n];
+        }
+        return [2, 999, 999, n];
+    };
+    return normalized.sort((a,b) => {
+        const ka = getKey(a.__sortName), kb = getKey(b.__sortName);
+        for (let i=0;i<ka.length-1;i++) if (ka[i] !== kb[i]) return ka[i] - kb[i];
+        return ka[ka.length-1].localeCompare(kb[kb.length-1], 'pt-BR');
+    }).map(({__sortName,...g}) => g);
+}
 
 function getGradeScheduleOptions(gradeId) {
     const options = [];
@@ -1075,7 +1099,7 @@ async function renderAllSchedules() {
         const schedules = snap.docs.map(d => ({id:d.id, ...d.data()}));
 
         const currentFilter = scheduleAllGradeFilter?.value || '';
-        const grades = allGrades.filter(g => !currentFilter || g.id === currentFilter);
+        const grades = sortCoordinationGrades(allGrades.filter(g => !currentFilter || g.id === currentFilter));
 
         if (scheduleAllGradeFilter && scheduleAllGradeFilter.options.length <= 1) {
             scheduleAllGradeFilter.innerHTML = '<option value="">Todas as turmas</option>' +
@@ -1095,46 +1119,120 @@ async function renderAllSchedules() {
 
         const days = ['Segunda','Terça','Quarta','Quinta','Sexta'];
         const periods = [1,2,3,4,5,6,7];
-        let html = `<div class="all-schedule-wrap"><table class="all-schedule-table">
-            <thead><tr><th>Dia</th><th>Horário</th>${grades.map(g=>`<th>${escapeGeneratorHtml(g.name)}</th>`).join('')}</tr></thead><tbody>`;
+        let html = '<div class="coordination-grade-list">';
 
-        days.forEach(day => {
+        grades.forEach(grade => {
+            const timesLabels = calculateTimeSlots(
+                grade.startTime || '07:15',
+                parseInt(grade.lessonDuration) || 50,
+                7,
+                parseInt(grade.intervalAfter) || 3,
+                parseInt(grade.intervalDuration) || 15
+            );
+
+            html += `
+                <section class="coordination-grade-card">
+                    <div class="coordination-grade-title">${escapeGeneratorHtml(grade.name)}</div>
+                    <div class="coordination-public-link">🔗 Link Público</div>
+                    <div class="coordination-grade-head">
+                        <div>
+                            <span class="coordination-grade-kicker">GRADE DE HORÁRIOS</span>
+                            <p>${escapeGeneratorHtml(grade.courseName || 'Horário semanal')}</p>
+                        </div>
+                        <span class="coordination-grade-badge">${grade.lessonDuration || 50} min/aula</span>
+                    </div>
+                    <div class="coordination-timetable-wrap">
+                        <table class="coordination-timetable">
+                            <thead>
+                                <tr><th>HORÁRIO</th>${days.map(d => `<th>${d.substring(0,3).toUpperCase()}</th>`).join('')}</tr>
+                            </thead>
+                            <tbody>`;
+
             periods.forEach(period => {
-                html += `<tr><td class="all-day-cell">${day}</td><td class="all-time-cell">${period}ª aula</td>`;
-                grades.forEach(g => {
-                    const s = byKey[`${g.id}|${day}|${period}`];
-                    if (s) {
-                        const teacher = teacherMap[s.teacherId]?.name || 'Professor';
-                        const subject = subjectMap[s.subjectId];
-                        const subjectLabel = subject?.sigla || subject?.name || 'Disciplina';
-                        html += `<td class="all-schedule-cell">
-                            <button type="button" class="all-schedule-card" data-grade="${g.id}" data-day="${day}" data-period="${period}" data-schedule="${s.id}">
-                                <strong>${escapeGeneratorHtml(subjectLabel)}</strong>
-                                <span>${escapeGeneratorHtml(teacher)}</span>
-                            </button>
-                        </td>`;
-                    } else {
-                        html += `<td class="all-schedule-cell">
-                            <button type="button" class="all-schedule-empty" data-grade="${g.id}" data-day="${day}" data-period="${period}">＋ Livre</button>
-                        </td>`;
-                    }
+                html += `<tr>
+                    <td class="time-column">${escapeGeneratorHtml(timesLabels[period-1] || '--:--')}</td>`;
+                days.forEach(day => {
+                    const s = byKey[`${grade.id}|${day}|${period}`];
+                    const currentValue = s ? `${s.teacherId}|${s.subjectId}` : '';
+                    const options = getGradeScheduleOptions(grade.id);
+                    html += `<td>
+                        <select class="schedule-select coordination-schedule-select" data-grade="${grade.id}" data-day="${day}" data-period="${period}" data-original="${escapeGeneratorHtml(currentValue)}">
+                            <option value="">Livre</option>
+                            ${options.map(o => `<option value="${o.value}" ${currentValue === o.value ? 'selected' : ''}>${escapeGeneratorHtml(o.label)}</option>`).join('')}
+                        </select>
+                    </td>`;
                 });
-                html += '</tr>';
+                html += `</tr>`;
+
+                if (period === parseInt(grade.intervalAfter)) {
+                    html += `<tr class="intervalo-row"><td colspan="6">INTERVALO</td></tr>`;
+                }
             });
+
+            html += `</tbody></table></div></section>`;
         });
 
-        html += '</tbody></table></div>';
+        html += '</div>';
         container.innerHTML = html;
 
-        container.querySelectorAll('[data-grade][data-day][data-period]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const key = `${btn.dataset.grade}|${btn.dataset.day}|${parseInt(btn.dataset.period)}`;
-                openScheduleQuickModal({
-                    gradeId: btn.dataset.grade,
-                    day: btn.dataset.day,
-                    period: parseInt(btn.dataset.period),
-                    schedule: byKey[key] || null
-                });
+        container.querySelectorAll('.coordination-schedule-select').forEach(select => {
+            select.addEventListener('change', async (e) => {
+                const el = e.currentTarget;
+                const gradeId = el.dataset.grade;
+                const day = el.dataset.day;
+                const period = parseInt(el.dataset.period, 10);
+                const value = el.value;
+                const original = el.dataset.original || '';
+
+                if (value === original) return;
+
+                const oldValue = el.value;
+                el.disabled = true;
+                el.classList.add('is-saving');
+
+                try {
+                    if (value) {
+                        const [teacherId] = value.split('|');
+                        const teacher = teacherMap[teacherId];
+
+                        if (teacher?.restricoes?.includes(day)) {
+                            throw new Error(`Folga de ${teacher.name} cadastrada para ${day}.`);
+                        }
+
+                        if (await checkTeacherConflict(teacherId, day, period, gradeId, schoolId)) {
+                            throw new Error(`${teacher?.name || 'Este professor'} já possui aula em outra turma neste horário.`);
+                        }
+                    }
+
+                    const cellSnap = await getDocs(query(
+                        collection(db, 'schedules'),
+                        where('schoolId','==',schoolId),
+                        where('gradeId','==',gradeId),
+                        where('day','==',day),
+                        where('period','==',period)
+                    ));
+
+                    for (const d of cellSnap.docs) await deleteDoc(d.ref);
+
+                    if (value) {
+                        const [teacherId, subjectId] = value.split('|');
+                        await addDoc(collection(db, 'schedules'), {
+                            schoolId, gradeId, teacherId, subjectId, day, period
+                        });
+                    }
+
+                    el.dataset.original = value;
+                    el.classList.remove('is-saving');
+                    el.classList.add('is-saved');
+                    setTimeout(() => el.classList.remove('is-saved'), 900);
+                } catch (error) {
+                    console.error('Erro ao alterar horário:', error);
+                    alert(`⚠️ Não foi possível alterar este horário.\n\n${error.message}`);
+                    el.value = original;
+                    el.classList.remove('is-saving');
+                } finally {
+                    el.disabled = false;
+                }
             });
         });
     } catch (error) {
@@ -1142,6 +1240,7 @@ async function renderAllSchedules() {
         container.innerHTML = `<div class="generator-status error">Erro ao carregar a grade: ${escapeGeneratorHtml(error.message)}</div>`;
     }
 }
+
 
 
 async function renderTimetable(gradeId) {
