@@ -7,7 +7,6 @@
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/admin.css">
     <link rel="stylesheet" href="css/horario.css">
-    <link rel="stylesheet" href="css/horario-admin.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
@@ -346,23 +345,8 @@
                             <button class="btn-primary btn-generate" id="btnGenerateAutomatic">✨ GERAR TODAS AS TURMAS</button>
                             <div id="generatorStatus" class="generator-status"></div>
                         </div>
-                        <div class="schedule-view-switch">
-                            <button type="button" class="schedule-view-btn active" id="btnViewAllSchedules">📋 Todas as turmas</button>
-                            <button type="button" class="schedule-view-btn" id="btnViewSingleSchedule">🏫 Uma turma</button>
-                        </div>
-                        <div id="scheduleOverviewControls" class="schedule-overview-controls">
-                            <div class="input-group"><label>Filtro de turma</label><select id="overviewGradeFilter"><option value="">Todas as turmas</option></select></div>
-                            <div class="schedule-bulk-actions">
-                                <button type="button" class="btn-secondary" id="btnAddScheduleSlot">＋ Adicionar horário</button>
-                                <button type="button" class="btn-secondary danger" id="btnRemoveScheduleSlot">− Remover horário</button>
-                                <button type="button" class="btn-primary" id="btnRefreshScheduleOverview">↻ Atualizar</button>
-                            </div>
-                        </div>
-                        <div id="scheduleOverview" class="schedule-overview"></div>
-                        <div id="singleScheduleEditor" class="single-schedule-editor hidden">
-                            <label class="section-label">Visualizar / editar uma turma</label>
-                            <select id="selectGrade" style="width:100%; margin-bottom:20px; padding:10px; border-radius:6px; border:1px solid #cbd5e1;"></select>
-                        </div>
+                        <label class="section-label">Visualizar / editar uma turma</label>
+                        <select id="selectGrade" style="width:100%; margin-bottom:20px; padding:10px; border-radius:6px; border:1px solid #cbd5e1;"></select>
                         <div style="display:flex; flex-direction:column; gap:10px;">
                             <button class="btn-primary" id="btnSaveFullSchedule">💾 Salvar Grade</button>
                             <button class="btn-primary" id="btnExportPdfAdmin" style="background:#10b981">📄 Baixar PDF</button>

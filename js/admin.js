@@ -13,8 +13,6 @@ let gradeMap = {};
 let teacherMap = {}; 
 let globalSchoolName = "";
 let monitorMode = "now";
-let allScheduleData = [];
-let scheduleOverviewInitialized = false;
 
 // --- INICIALIZAÇÃO SaaS ---
 onAuthStateChanged(auth, async (user) => {
@@ -559,8 +557,7 @@ document.getElementById('btnSaveSchoolName').onclick = async () => {
 async function loadAllData() {
     const qS = query(collection(db, "schedules"), where("schoolId", "==", schoolId));
     const sSnap = await getDocs(qS); const workload = {}; const allSchedules = [];
-    sSnap.forEach(d => { const data = { id: d.id, ...d.data() }; allSchedules.push(data); workload[data.teacherId] = (workload[data.teacherId] || 0) + 1; });
-    allScheduleData = allSchedules;
+    sSnap.forEach(d => { const data = d.data(); allSchedules.push(data); workload[data.teacherId] = (workload[data.teacherId] || 0) + 1; });
     
     const cols = ['subjects', 'grades', 'teachers'];
     let tC = []; let gC = [];
@@ -685,8 +682,6 @@ async function loadAllData() {
     }
 
     processDashboardInt(tC, gC, allSchedules, workload);
-    initScheduleOverview();
-    renderScheduleOverview();
 }
 
 function processDashboardInt(teachers, grades, schedules, workload) {
@@ -940,95 +935,6 @@ document.getElementById('btnGenerateAutomatic').onclick = async () => {
         btn.textContent = '✨ GERAR TODAS AS TURMAS';
     }
 };
-
-// --- PAINEL VISUAL DE HORÁRIOS ---
-const scheduleDays = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'];
-
-function getScheduleLabel(schedule) {
-    const teacher = teacherMap[schedule.teacherId];
-    const subject = subjectMap[schedule.subjectId];
-    return {
-        teacher: teacher?.name || 'Professor não encontrado',
-        subject: subject?.sigla || subject?.name || 'Disciplina não encontrada'
-    };
-}
-
-function renderScheduleOverview() {
-    const container = document.getElementById('scheduleOverview');
-    const filter = document.getElementById('overviewGradeFilter')?.value || '';
-    if (!container) return;
-    const grades = (filter ? allGrades.filter(g => g.id === filter) : allGrades).slice();
-    if (!grades.length) {
-        container.innerHTML = '<div class="schedule-empty">Nenhuma turma cadastrada.</div>';
-        return;
-    }
-    const byKey = new Map();
-    allScheduleData.forEach(s => byKey.set(`${s.gradeId}|${s.day}|${s.period}`, s));
-    const periods = Array.from({length: 7}, (_,i) => i + 1);
-    let html = '<div class="schedule-overview-scroll"><table class="schedule-overview-table"><thead><tr><th>Horário</th>';
-    grades.forEach(g => html += `<th>${escapeGeneratorHtml(g.name)}</th>`);
-    html += '</tr></thead><tbody>';
-    periods.forEach(period => {
-        scheduleDays.forEach((day, dayIndex) => {
-            const timeGrade = grades[0];
-            const labels = timeGrade ? calculateTimeSlots(timeGrade.startTime, timeGrade.lessonDuration, 7, timeGrade.intervalAfter, timeGrade.intervalDuration) : [];
-            html += `<tr class="${dayIndex ? '' : 'day-start'}"><td class="overview-time"><strong>${day.slice(0,3).toUpperCase()}</strong><span>${labels[period-1] || `${period}ª`}</span></td>`;
-            grades.forEach(g => {
-                const s = byKey.get(`${g.id}|${day}|${period}`);
-                if (!s) html += `<td><button type="button" class="overview-cell empty" data-grade="${g.id}" data-day="${day}" data-period="${period}">＋ Livre</button></td>`;
-                else {
-                    const l = getScheduleLabel(s);
-                    html += `<td><button type="button" class="overview-cell filled" data-grade="${g.id}" data-day="${day}" data-period="${period}"><strong>${escapeGeneratorHtml(l.subject)}</strong><small>${escapeGeneratorHtml(l.teacher)}</small></button></td>`;
-                }
-            });
-            html += '</tr>';
-        }
-    });
-    html += '</tbody></table></div>';
-    container.innerHTML = html;
-    container.querySelectorAll('.overview-cell').forEach(btn => {
-        btn.onclick = () => {
-            const gradeId = btn.dataset.grade;
-            document.getElementById('selectGrade').value = gradeId;
-            document.getElementById('btnViewAllSchedules')?.classList.remove('active');
-            document.getElementById('btnViewSingleSchedule')?.classList.add('active');
-            document.getElementById('scheduleOverviewControls')?.classList.add('hidden');
-            document.getElementById('scheduleOverview')?.classList.add('hidden');
-            document.getElementById('singleScheduleEditor')?.classList.remove('hidden');
-            renderTimetable(gradeId);
-            document.getElementById('timetableContainer')?.scrollIntoView({behavior:'smooth', block:'start'});
-        };
-    });
-}
-
-function initScheduleOverview() {
-    if (scheduleOverviewInitialized) return;
-    scheduleOverviewInitialized = true;
-    const filter = document.getElementById('overviewGradeFilter');
-    if (filter) {
-        filter.onchange = renderScheduleOverview;
-        filter.innerHTML = '<option value="">Todas as turmas</option>';
-        allGrades.forEach(g => filter.insertAdjacentHTML('beforeend', `<option value="${g.id}">${escapeGeneratorHtml(g.name)}</option>`));
-    }
-    document.getElementById('btnViewAllSchedules')?.addEventListener('click', () => {
-        document.getElementById('btnViewAllSchedules').classList.add('active');
-        document.getElementById('btnViewSingleSchedule').classList.remove('active');
-        document.getElementById('scheduleOverviewControls').classList.remove('hidden');
-        document.getElementById('scheduleOverview').classList.remove('hidden');
-        document.getElementById('singleScheduleEditor').classList.add('hidden');
-        renderScheduleOverview();
-    });
-    document.getElementById('btnViewSingleSchedule')?.addEventListener('click', () => {
-        document.getElementById('btnViewSingleSchedule').classList.add('active');
-        document.getElementById('btnViewAllSchedules').classList.remove('active');
-        document.getElementById('scheduleOverviewControls').classList.add('hidden');
-        document.getElementById('scheduleOverview').classList.add('hidden');
-        document.getElementById('singleScheduleEditor').classList.remove('hidden');
-        const gid = document.getElementById('selectGrade').value;
-        if (gid) renderTimetable(gid);
-    });
-    document.getElementById('btnRefreshScheduleOverview')?.addEventListener('click', async () => { await loadAllData(); renderScheduleOverview(); });
-}
 
 // --- GERADOR DE HORÁRIO --- 
 document.getElementById('selectGrade').onchange = (e) => { if(e.target.value) renderTimetable(e.target.value); };
