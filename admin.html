@@ -359,7 +359,7 @@
                                 <select id="scheduleAllGradeFilter"><option value="">Todas as turmas</option></select>
                                 <button type="button" class="btn-secondary" id="btnRefreshAllSchedules">↻ Atualizar</button>
                             </div>
-                            <small>Visualização geral da grade. Clique em uma aula para abrir a turma correspondente no editor.</small>
+                            <small class="schedule-help">Clique em uma aula para editar. Clique em “Livre” para adicionar uma aula.</small>
                         </div>
                         <div style="display:flex; flex-direction:column; gap:10px;">
                             <button class="btn-primary" id="btnSaveFullSchedule">💾 Salvar Grade</button>
@@ -387,5 +387,34 @@
         </main>
     </div>
     <script type="module" src="js/admin.js"></script>
+
+
+<!-- Modal de edição rápida da grade -->
+<div id="scheduleQuickModal" class="schedule-quick-modal hidden" aria-hidden="true">
+  <div class="schedule-quick-backdrop" data-close-schedule-modal></div>
+  <div class="schedule-quick-dialog" role="dialog" aria-modal="true" aria-labelledby="scheduleQuickTitle">
+    <div class="schedule-quick-header">
+      <div>
+        <span class="schedule-quick-kicker">GRADE DE HORÁRIOS</span>
+        <h3 id="scheduleQuickTitle">Editar aula</h3>
+        <p id="scheduleQuickMeta"></p>
+      </div>
+      <button type="button" class="schedule-quick-close" data-close-schedule-modal>×</button>
+    </div>
+    <div class="schedule-quick-body">
+      <input type="hidden" id="scheduleQuickGrade">
+      <input type="hidden" id="scheduleQuickDay">
+      <input type="hidden" id="scheduleQuickPeriod">
+      <label>Professor / Disciplina</label>
+      <select id="scheduleQuickValue"></select>
+      <div id="scheduleQuickConflict" class="schedule-quick-conflict hidden"></div>
+    </div>
+    <div class="schedule-quick-footer">
+      <button type="button" class="btn-secondary" data-close-schedule-modal>Cancelar</button>
+      <button type="button" class="btn-danger" id="btnScheduleQuickRemove">Remover aula</button>
+      <button type="button" class="btn-primary" id="btnScheduleQuickSave">Salvar aula</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>

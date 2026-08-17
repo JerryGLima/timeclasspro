@@ -938,8 +938,10 @@ document.getElementById('btnGenerateAutomatic').onclick = async () => {
 
 // --- GERADOR DE HORÁRIO --- 
 document.getElementById('selectGrade').onchange = (e) => { if(e.target.value) renderTimetable(e.target.value); };
-
-// --- VISÃO GERAL DA GRADE PARA A COORDENAÇÃO ---
+/* =========================================================
+   VISÃO GERAL + EDIÇÃO RÁPIDA DA GRADE
+   A visão geral não substitui o editor tradicional.
+   ========================================================= */
 const btnScheduleSingle = document.getElementById('btnScheduleSingle');
 const btnScheduleAll = document.getElementById('btnScheduleAll');
 const singleScheduleControls = document.getElementById('singleScheduleControls');
@@ -954,13 +956,114 @@ function setScheduleView(mode) {
     singleScheduleControls?.classList.toggle('hidden', all);
     allScheduleControls?.classList.toggle('hidden', !all);
     if (all) renderAllSchedules();
-    else if (document.getElementById('selectGrade').value) renderTimetable(document.getElementById('selectGrade').value);
 }
 
 btnScheduleSingle?.addEventListener('click', () => setScheduleView('single'));
 btnScheduleAll?.addEventListener('click', () => setScheduleView('all'));
-btnRefreshAllSchedules?.addEventListener('click', () => renderAllSchedules());
-scheduleAllGradeFilter?.addEventListener('change', () => renderAllSchedules());
+btnRefreshAllSchedules?.addEventListener('click', renderAllSchedules);
+scheduleAllGradeFilter?.addEventListener('change', renderAllSchedules);
+
+function getGradeScheduleOptions(gradeId) {
+    const options = [];
+    Object.values(teacherMap).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR')).forEach(p => {
+        (p.vinculos || []).forEach(v => {
+            if (v.grdId === gradeId) {
+                const subject = subjectMap[v.subId];
+                options.push({
+                    value: `${p.id}|${v.subId}`,
+                    label: `${p.name} — ${subject?.sigla || subject?.name || 'Disciplina'}`,
+                    teacherId: p.id,
+                    subjectId: v.subId
+                });
+            }
+        });
+    });
+    return options;
+}
+
+function openScheduleQuickModal({gradeId, day, period, schedule}) {
+    const modal = document.getElementById('scheduleQuickModal');
+    if (!modal) return;
+    const grade = gradeMap[gradeId];
+    const select = document.getElementById('scheduleQuickValue');
+    const options = getGradeScheduleOptions(gradeId);
+
+    document.getElementById('scheduleQuickGrade').value = gradeId;
+    document.getElementById('scheduleQuickDay').value = day;
+    document.getElementById('scheduleQuickPeriod').value = period;
+
+    document.getElementById('scheduleQuickTitle').textContent = schedule ? 'Editar aula' : 'Adicionar aula';
+    document.getElementById('scheduleQuickMeta').textContent = `${grade?.name || 'Turma'} • ${day} • ${period}ª aula`;
+
+    select.innerHTML = '<option value="">Livre / remover aula</option>' +
+        options.map(o => `<option value="${o.value}">${escapeGeneratorHtml(o.label)}</option>`).join('');
+    select.value = schedule ? `${schedule.teacherId}|${schedule.subjectId}` : '';
+
+    document.getElementById('btnScheduleQuickRemove').style.display = schedule ? '' : 'none';
+    document.getElementById('scheduleQuickConflict').classList.add('hidden');
+    modal.classList.remove('hidden');
+    modal.setAttribute('aria-hidden','false');
+}
+
+function closeScheduleQuickModal() {
+    const modal = document.getElementById('scheduleQuickModal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    modal.setAttribute('aria-hidden','true');
+}
+
+document.querySelectorAll('[data-close-schedule-modal]').forEach(el => el.addEventListener('click', closeScheduleQuickModal));
+
+async function saveScheduleQuickModal(removeOnly = false) {
+    const gradeId = document.getElementById('scheduleQuickGrade').value;
+    const day = document.getElementById('scheduleQuickDay').value;
+    const period = parseInt(document.getElementById('scheduleQuickPeriod').value, 10);
+    const value = document.getElementById('scheduleQuickValue').value;
+
+    if (!gradeId || !day || !period) return;
+    const conflictBox = document.getElementById('scheduleQuickConflict');
+    conflictBox.classList.add('hidden');
+
+    let existing = [];
+    const snap = await getDocs(query(collection(db, 'schedules'), where('schoolId','==',schoolId), where('gradeId','==',gradeId)));
+    snap.forEach(d => {
+        const s = d.data();
+        if (s.day === day && parseInt(s.period) === period) existing.push(d);
+    });
+
+    if (!removeOnly && value) {
+        const [teacherId, subjectId] = value.split('|');
+        const teacher = teacherMap[teacherId];
+
+        if (teacher?.restricoes?.includes(day)) {
+            conflictBox.textContent = `⚠️ ${teacher.name} possui folga cadastrada na ${day}.`;
+            conflictBox.classList.remove('hidden');
+            return;
+        }
+
+        if (await checkTeacherConflict(teacherId, day, period, gradeId, schoolId)) {
+            conflictBox.textContent = `⚠️ ${teacher?.name || 'Este professor'} já possui aula em outra turma neste horário.`;
+            conflictBox.classList.remove('hidden');
+            return;
+        }
+
+        // Remove o registro atual da célula antes de gravar o novo.
+        for (const d of existing) await deleteDoc(d.ref);
+        await addDoc(collection(db,'schedules'), {
+            schoolId, gradeId, teacherId, subjectId, day, period
+        });
+    } else {
+        for (const d of existing) await deleteDoc(d.ref);
+    }
+
+    closeScheduleQuickModal();
+    await loadAllData();
+    if (btnScheduleAll?.classList.contains('active')) await renderAllSchedules();
+    else if (document.getElementById('selectGrade').value === gradeId) await renderTimetable(gradeId);
+}
+
+document.getElementById('btnScheduleQuickSave')?.addEventListener('click', () => saveScheduleQuickModal(false));
+document.getElementById('btnScheduleQuickRemove')?.addEventListener('click', () => saveScheduleQuickModal(true));
 
 async function renderAllSchedules() {
     const container = document.getElementById('timetableContainer');
@@ -968,17 +1071,16 @@ async function renderAllSchedules() {
     container.innerHTML = '<div class="generator-status">🔄 Carregando grade geral...</div>';
 
     try {
-        const snap = await getDocs(query(collection(db, 'schedules'), where('schoolId', '==', schoolId)));
-        const schedules = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        const selectedGrade = scheduleAllGradeFilter?.value || '';
-        const grades = allGrades.filter(g => !selectedGrade || g.id === selectedGrade);
-        const days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'];
-        const periods = [1,2,3,4,5,6,7];
+        const snap = await getDocs(query(collection(db, 'schedules'), where('schoolId','==',schoolId)));
+        const schedules = snap.docs.map(d => ({id:d.id, ...d.data()}));
+
+        const currentFilter = scheduleAllGradeFilter?.value || '';
+        const grades = allGrades.filter(g => !currentFilter || g.id === currentFilter);
 
         if (scheduleAllGradeFilter && scheduleAllGradeFilter.options.length <= 1) {
             scheduleAllGradeFilter.innerHTML = '<option value="">Todas as turmas</option>' +
                 allGrades.map(g => `<option value="${g.id}">${escapeGeneratorHtml(g.name)}</option>`).join('');
-            scheduleAllGradeFilter.value = selectedGrade;
+            scheduleAllGradeFilter.value = currentFilter;
         }
 
         if (!grades.length) {
@@ -987,37 +1089,56 @@ async function renderAllSchedules() {
         }
 
         const byKey = {};
-        schedules.forEach(s => { byKey[`${s.gradeId}|${s.day}|${s.period}`] = s; });
-        const header = grades.map(g => `<th>${escapeGeneratorHtml(g.name)}</th>`).join('');
-        let html = `<div class="all-schedule-wrap"><table class="all-schedule-table"><thead><tr><th class="all-time">Horário</th>${header}</tr></thead><tbody>`;
-        periods.forEach(period => {
-            html += `<tr><td class="time-column all-time">${period}ª aula</td>`;
-            grades.forEach(g => {
-                const cells = days.map(day => {
-                    const s = byKey[`${g.id}|${day}|${period}`];
-                    if (!s) return `<div class="all-schedule-empty">Livre</div>`;
-                    const teacher = teacherMap[s.teacherId]?.name || 'Professor';
-                    const subject = subjectMap[s.subjectId]?.sigla || subjectMap[s.subjectId]?.name || 'Disciplina';
-                    return `<button type="button" class="all-schedule-card" data-grade-id="${g.id}" title="${escapeGeneratorHtml(day)} • ${period}ª aula — clique para editar"><strong>${escapeGeneratorHtml(subject)}</strong><span>${escapeGeneratorHtml(teacher)}</span><span>${escapeGeneratorHtml(day)}</span></button>`;
-                }).join('');
-                html += `<td class="all-schedule-cell">${cells}</td>`;
-            });
-            html += '</tr>';
+        schedules.forEach(s => {
+            byKey[`${s.gradeId}|${s.day}|${parseInt(s.period)}`] = s;
         });
+
+        const days = ['Segunda','Terça','Quarta','Quinta','Sexta'];
+        const periods = [1,2,3,4,5,6,7];
+        let html = `<div class="all-schedule-wrap"><table class="all-schedule-table">
+            <thead><tr><th>Dia</th><th>Horário</th>${grades.map(g=>`<th>${escapeGeneratorHtml(g.name)}</th>`).join('')}</tr></thead><tbody>`;
+
+        days.forEach(day => {
+            periods.forEach(period => {
+                html += `<tr><td class="all-day-cell">${day}</td><td class="all-time-cell">${period}ª aula</td>`;
+                grades.forEach(g => {
+                    const s = byKey[`${g.id}|${day}|${period}`];
+                    if (s) {
+                        const teacher = teacherMap[s.teacherId]?.name || 'Professor';
+                        const subject = subjectMap[s.subjectId];
+                        const subjectLabel = subject?.sigla || subject?.name || 'Disciplina';
+                        html += `<td class="all-schedule-cell">
+                            <button type="button" class="all-schedule-card" data-grade="${g.id}" data-day="${day}" data-period="${period}" data-schedule="${s.id}">
+                                <strong>${escapeGeneratorHtml(subjectLabel)}</strong>
+                                <span>${escapeGeneratorHtml(teacher)}</span>
+                            </button>
+                        </td>`;
+                    } else {
+                        html += `<td class="all-schedule-cell">
+                            <button type="button" class="all-schedule-empty" data-grade="${g.id}" data-day="${day}" data-period="${period}">＋ Livre</button>
+                        </td>`;
+                    }
+                });
+                html += '</tr>';
+            });
+        });
+
         html += '</tbody></table></div>';
         container.innerHTML = html;
 
-        container.querySelectorAll('.all-schedule-card').forEach(btn => {
+        container.querySelectorAll('[data-grade][data-day][data-period]').forEach(btn => {
             btn.addEventListener('click', () => {
-                const gradeId = btn.dataset.gradeId;
-                if (!gradeId) return;
-                document.getElementById('selectGrade').value = gradeId;
-                setScheduleView('single');
-                renderTimetable(gradeId);
+                const key = `${btn.dataset.grade}|${btn.dataset.day}|${parseInt(btn.dataset.period)}`;
+                openScheduleQuickModal({
+                    gradeId: btn.dataset.grade,
+                    day: btn.dataset.day,
+                    period: parseInt(btn.dataset.period),
+                    schedule: byKey[key] || null
+                });
             });
         });
     } catch (error) {
-        console.error('Erro ao carregar visão geral:', error);
+        console.error('Erro na visão geral:', error);
         container.innerHTML = `<div class="generator-status error">Erro ao carregar a grade: ${escapeGeneratorHtml(error.message)}</div>`;
     }
 }
