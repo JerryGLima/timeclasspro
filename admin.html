@@ -324,69 +324,64 @@
             </section>
 
             <section id="sec-horario" class="admin-section hidden">
-                <div class="section-header">
-                    <div>
-                        <h2>📅 Grade de Horários</h2>
-                        <p class="section-subtitle">Monte e confira a grade inteira da escola em uma única tela.</p>
-                    </div>
-                </div>
-
-                <div class="schedule-command-bar">
-                    <div class="schedule-filter-group">
-                        <label>Visualização</label>
-                        <select id="scheduleViewMode">
-                            <option value="school">🏫 Todas as turmas</option>
-                            <option value="grade">📚 Por turma</option>
-                            <option value="teacher">👨‍🏫 Por professor</option>
-                        </select>
-                    </div>
-                    <div class="schedule-filter-group" id="scheduleGradeFilterWrap">
-                        <label>Turma</label>
-                        <select id="scheduleGradeFilter"><option value="">Todas as turmas</option></select>
-                    </div>
-                    <div class="schedule-filter-group hidden" id="scheduleTeacherFilterWrap">
-                        <label>Professor</label>
-                        <select id="scheduleTeacherFilter"><option value="">Selecione o professor</option></select>
-                    </div>
-                    <div class="schedule-actions">
-                        <button class="btn-primary" id="btnAddScheduleClass">＋ Adicionar aula</button>
-                        <button class="btn-secondary" id="btnRemoveScheduleClass">− Remover aula</button>
-                        <button class="btn-primary" id="btnSaveSchoolSchedule">💾 Salvar alterações</button>
-                        <button class="btn-secondary" id="btnRefreshSchoolSchedule">↻ Atualizar</button>
-                    </div>
-                </div>
-
-                <div class="schedule-info-bar">
-                    <span>💡 Clique em qualquer célula para adicionar, editar ou remover uma aula.</span>
-                    <span id="scheduleGridSummary">Carregando grade...</span>
-                </div>
-
-                <div class="schedule-board-card">
-                    <div id="schoolScheduleBoard" class="school-schedule-board"></div>
-                </div>
-
-                <div class="schedule-validation-card" id="scheduleValidationPanel">
-                    <div><strong>🔎 Validação da grade</strong><span id="scheduleValidationText">Nenhuma alteração pendente.</span></div>
-                </div>
-
-                <div id="scheduleClassModal" class="schedule-modal hidden" aria-hidden="true">
-                    <div class="schedule-modal-backdrop"></div>
-                    <div class="schedule-modal-box" role="dialog" aria-modal="true" aria-labelledby="scheduleModalTitle">
-                        <div class="schedule-modal-header">
-                            <div><h3 id="scheduleModalTitle">Adicionar aula</h3><p id="scheduleModalSubtitle"></p></div>
-                            <button type="button" class="schedule-modal-close" id="btnCloseScheduleModal">×</button>
+                <div class="card horario-wrapper">
+                    <div class="horario-controls">
+                        <h3>⚙️ Gerador de Grade</h3>
+                        <div class="auto-generator-box">
+                            <strong>✨ Geração automática</strong>
+                            <p>Usa carga semanal, disponibilidade e vínculos dos professores para montar todas as turmas sem conflitos.</p>
+                            <label class="generator-option"><input type="checkbox" id="prefSequentialBlocks" checked> Priorizar aulas sequenciais em blocos de 2</label>
+                            <small class="generator-help">Ex.: 2 aulas/semana → 2 seguidas no mesmo dia; 4 aulas/semana → preferir 2+2 em dois dias; 5 aulas/semana → preferir 2+2+1.</small>
+                            <label class="generator-option"><input type="checkbox" id="prefAvoidGaps" checked> Evitar janelas de professor</label>
+                            <label class="generator-option"><input type="checkbox" id="prefAvoidLast"> Evitar 7º horário quando possível</label>
+                            <label class="generator-option generator-option-select">
+                                <span>Disciplinas consecutivas</span>
+                                <select id="prefMaxConsecutiveSubject">
+                                    <option value="0" selected>Sem limite</option>
+                                    <option value="2">Máximo 2 consecutivas</option>
+                                    <option value="3">Máximo 3 consecutivas</option>
+                                </select>
+                            </label>
+                            <small class="generator-help">Ex.: com “Sem limite”, Matemática pode ocupar 1ª, 2ª, 3ª e outros horários seguidos, se isso ajudar a fechar a grade.</small>
+                            <button class="btn-primary btn-generate" id="btnGenerateAutomatic">✨ GERAR TODAS AS TURMAS</button>
+                            <div id="generatorStatus" class="generator-status"></div>
                         </div>
-                        <div class="schedule-modal-grid">
-                            <div class="input-group"><label>Turma</label><select id="modalScheduleGrade"></select></div>
-                            <div class="input-group"><label>Dia</label><select id="modalScheduleDay"><option>Segunda</option><option>Terça</option><option>Quarta</option><option>Quinta</option><option>Sexta</option></select></div>
-                            <div class="input-group"><label>Horário</label><select id="modalSchedulePeriod"></select></div>
-                            <div class="input-group"><label>Professor / Disciplina</label><select id="modalScheduleTeacherSubject"></select></div>
+                        <div class="schedule-view-switch">
+                            <button type="button" class="schedule-view-btn active" id="btnViewAllSchedules">📋 Todas as turmas</button>
+                            <button type="button" class="schedule-view-btn" id="btnViewSingleSchedule">🏫 Uma turma</button>
                         </div>
-                        <div id="modalScheduleConflict" class="schedule-modal-message hidden"></div>
-                        <div class="schedule-modal-actions">
-                            <button class="btn-secondary" id="btnDeleteScheduleFromModal" style="background:#fee2e2;color:#b91c1c;display:none;">🗑 Remover aula</button>
-                            <button class="btn-secondary" id="btnCancelScheduleModal">Cancelar</button>
-                            <button class="btn-primary" id="btnConfirmScheduleModal">Salvar aula</button>
+                        <div id="scheduleOverviewControls" class="schedule-overview-controls">
+                            <div class="input-group"><label>Filtro de turma</label><select id="overviewGradeFilter"><option value="">Todas as turmas</option></select></div>
+                            <div class="schedule-bulk-actions">
+                                <button type="button" class="btn-secondary" id="btnAddScheduleSlot">＋ Adicionar horário</button>
+                                <button type="button" class="btn-secondary danger" id="btnRemoveScheduleSlot">− Remover horário</button>
+                                <button type="button" class="btn-primary" id="btnRefreshScheduleOverview">↻ Atualizar</button>
+                            </div>
+                        </div>
+                        <div id="scheduleOverview" class="schedule-overview"></div>
+                        <div id="singleScheduleEditor" class="single-schedule-editor hidden">
+                            <label class="section-label">Visualizar / editar uma turma</label>
+                            <select id="selectGrade" style="width:100%; margin-bottom:20px; padding:10px; border-radius:6px; border:1px solid #cbd5e1;"></select>
+                        </div>
+                        <div style="display:flex; flex-direction:column; gap:10px;">
+                            <button class="btn-primary" id="btnSaveFullSchedule">💾 Salvar Grade</button>
+                            <button class="btn-primary" id="btnExportPdfAdmin" style="background:#10b981">📄 Baixar PDF</button>
+                            <button class="btn-primary" id="btnCopyPublicLink" style="background:#6366f1">🔗 Link Público</button>
+                        </div>
+                    </div>
+                    <div class="horario-preview">
+                        <div class="print-area-wrapper">
+                            <div id="printAreaAdmin">
+                                <div id="headerGradeAdmin" style="display:none; background:white; padding:15px 0; border-bottom: 2px solid #6366f1; margin-bottom: 10px;">
+                                    <div style="display:flex; justify-content: space-between; align-items: center; width: 100%;">
+                                        <div style="flex: 1.2; text-align:left;"><h1 class="modern-title" style="margin:0; font-size: 0.85rem; padding: 5px 12px;">HORÁRIO ESCOLAR <span class="currentYear"></span></h1></div>
+                                        <div style="text-align:center; padding: 0 10px;"><h2 id="viewSchoolNameAdmin" style="margin:0; font-size:1rem; text-transform:uppercase;">ESCOLA</h2><p style="margin:2px 0 0; font-size:0.75rem;"><span id="viewGradeAdmin"></span> | <span id="viewCourseAdmin"></span></p></div>
+                                        <div style="text-align:right;"><img id="schoolLogoPrint" src="" style="max-height:60px;"></div>
+                                    </div>
+                                </div>
+                                <div id="timetableContainer"></div>
+                                <div class="pdf-footer" style="display:none; text-align:center; font-size:0.55rem; color:#94a3b8; margin-top:5px; border-top:1px solid #eee; padding-top:1px">Jerry Gleydison &copy; <span class="currentYear"></span></div>
+                            </div>
                         </div>
                     </div>
                 </div>
